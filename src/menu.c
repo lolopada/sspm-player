@@ -533,6 +533,7 @@ static void draw_volume_knob(int sh, Vector2 mp) {
 }
 
 void menu_draw(Menu *m, int sw, int sh) {
+    gPreviewBtnRect = (Rectangle){0, 0, 0, 0};
     static int wJouer = 0, wAucunRes = 0, wGradeMax = 0;
     if (!wJouer) {
         wJouer    = MeasureText("PLAY  ( Enter )", 20);
@@ -694,6 +695,35 @@ void menu_draw(Menu *m, int sw, int sh) {
         DrawText(TextFormat("Mapped by  %s", e->info.mapper[0] ? e->info.mapper : "?"),
                  tx, ty, 16, (Color){ 160, 170, 195, 255 });
         ty += 26;
+
+        /* Bouton apercu audio ▶ / ⏸ */
+        if (e->info.hasAudio) {
+            Rectangle pb = { (float)tx, (float)ty, 160.0f, 26.0f };
+            gPreviewBtnRect = pb;
+            bool pbOv = CheckCollisionPointRec(mp, pb);
+            Color pbc = gPreviewPlaying
+                ? (Color){ 80, 195, 115, 255 }
+                : (Color){ 70, 115, 205, 255 };
+            DrawRectangleRounded(pb, 0.30f, 4,
+                pbOv ? (Color){ pbc.r/3, pbc.g/3, pbc.b/3, 255 }
+                     : (Color){ 18, 22, 38, 255 });
+            DrawRectangleLinesEx(pb, pbOv ? 1.5f : 1.0f, pbc);
+            /* Icone play ou pause dessinee a la main */
+            int ix = (int)(pb.x + 9), iy = (int)(pb.y + 6);
+            if (gPreviewPlaying) {
+                DrawRectangle(ix,     iy, 4, 14, RAYWHITE);
+                DrawRectangle(ix + 7, iy, 4, 14, RAYWHITE);
+            } else {
+                DrawTriangle((Vector2){ (float)ix,       (float)iy      },
+                             (Vector2){ (float)ix,       (float)(iy+14) },
+                             (Vector2){ (float)(ix + 12),(float)(iy+ 7) },
+                             RAYWHITE);
+            }
+            DrawText(gPreviewPlaying ? "Pause preview" : "Play preview",
+                     ix + 16, iy + 2, 13,
+                     pbOv ? RAYWHITE : (Color){ 185, 200, 232, 255 });
+            ty += 34;
+        }
 
         /* Separateur */
         DrawRectangleGradientH(tx, ty, panelX - tx - 30, 1,

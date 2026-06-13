@@ -118,3 +118,7 @@ Rectangle gAimCtrl;
 AsyncLoader gLoader;
 bool        gLoadFinalized = false;
 MenuScanner gMenuScanner;
+
+/* --- preview audio menu --- */
+bool      gPreviewPlaying = false;
+Rectangle gPreviewBtnRect;
