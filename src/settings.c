@@ -12,7 +12,8 @@ float mods_score_mult(unsigned mods, float rate) {
     float m = 1.0f;
     if (mods & MOD_HARDROCK) m *= 1.10f;
     if (mods & MOD_HIDDEN)   m *= 1.06f;
-    if (mods & MOD_NOFAIL)   m *= 0.50f;
+    if (mods & MOD_NOFAIL)     m *= 0.50f;
+    if (mods & MOD_FLASHLIGHT) m *= 1.12f;
     if (rate > 1.0f)      m *= 1.0f + (rate - 1.0f) * 0.5f;
     else if (rate < 1.0f) m *= rate;
     return m;

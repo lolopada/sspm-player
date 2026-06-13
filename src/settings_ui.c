@@ -962,8 +962,9 @@ static const ModDef MOD_DEFS[] = {
     { MOD_HIDDEN,   "Hidden",       "Notes fade out as they approach the plane.  Score x1.06" },
     { MOD_NOFAIL,   "No Fail",      "No game over: the map plays to the end.  Score x0.50" },
     { MOD_SUDDEN,   "Sudden Death", "A single missed note ends the run." },
-    { MOD_MIRROR_X, "Mirror H",     "Mirrors the note layout horizontally." },
-    { MOD_MIRROR_Y, "Mirror V",     "Mirrors the note layout vertically." },
+    { MOD_MIRROR_X,   "Mirror H",    "Mirrors the note layout horizontally." },
+    { MOD_MIRROR_Y,   "Mirror V",    "Mirrors the note layout vertically." },
+    { MOD_FLASHLIGHT, "Flashlight",  "Only the area around the cursor is visible.  Score x1.12" },
 };
 #define N_MODS ((int)(sizeof(MOD_DEFS) / sizeof(MOD_DEFS[0])))
 static const float RATE_STEPS[] = {
@@ -1007,7 +1008,7 @@ static Rectangle mods_row_rect(int panelX, int sh, int r) {
     int blockW   = panelX - tx - 30;
     int colW     = blockW / 2;
     int rowH = 32, rateH = 30;
-    int nColRows = (N_MODS + 1) / 2;            /* 3 lignes par colonne pour 6 mods */
+    int nColRows = (N_MODS + 1) / 2;            /* ceil(N_MODS/2) lignes par colonne */
     int rateY    = sh - 92 - rateH;
     int rowsTop  = rateY - nColRows * rowH;
     if (r >= N_MODS)
