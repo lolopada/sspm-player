@@ -966,12 +966,21 @@ static const ModDef MOD_DEFS[] = {
     { MOD_MIRROR_Y, "Mirror V",     "Mirrors the note layout vertically." },
 };
 #define N_MODS ((int)(sizeof(MOD_DEFS) / sizeof(MOD_DEFS[0])))
-static const float RATE_STEPS[] = { 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f };
+static const float RATE_STEPS[] = {
+    0.25f, 0.30f, 0.35f, 0.40f, 0.45f,
+    0.50f, 0.55f, 0.60f, 0.65f, 0.70f,
+    0.75f, 0.80f, 0.85f, 0.90f, 0.95f,
+    1.00f, 1.05f, 1.10f, 1.15f, 1.20f,
+    1.25f, 1.30f, 1.35f, 1.40f, 1.45f,
+    1.50f, 1.55f, 1.60f, 1.65f, 1.70f,
+    1.75f, 1.80f, 1.85f, 1.90f, 1.95f,
+    2.00f
+};
 #define N_RATE ((int)(sizeof(RATE_STEPS) / sizeof(RATE_STEPS[0])))
 
 /* Applique un pas a la vitesse (mod Vitesse). */
 static void mods_rate_step(int dir) {
-    int ri = 2;  /* defaut = 1.0x */
+    int ri = 15;  /* defaut = 1.0x (index 15 dans RATE_STEPS) */
     for (int i = 0; i < N_RATE; i++) if (fabsf(RATE_STEPS[i] - gSettings.rate) < 0.01f) ri = i;
     ri += dir; if (ri < 0) ri = 0; if (ri >= N_RATE) ri = N_RATE - 1;
     gSettings.rate = RATE_STEPS[ri];
