@@ -578,6 +578,10 @@ extern AsyncLoader gLoader;
 extern bool        gLoadFinalized;
 extern MenuScanner gMenuScanner;
 
+/* preview audio menu */
+extern bool      gPreviewPlaying;
+extern Rectangle gPreviewBtnRect;
+
 /* =========================================================================
  * Prototypes : settings.c
  * ========================================================================= */

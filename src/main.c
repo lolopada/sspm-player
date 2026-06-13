@@ -209,6 +209,18 @@ static void practice_fmt_ms(char *buf, int n, float ms) {
     snprintf(buf, n, "%d:%02d.%d", s / 60, s % 60, ((int)ms % 1000) / 100);
 }
 
+/* Etat du preview audio dans le menu */
+typedef struct {
+    SspmMap sspm;
+    Music   music;
+    bool    haveMap;
+    bool    haveMusic;
+    bool    userPaused;  /* pause explicite — persiste lors des changements de map */
+    int     loadedIdx;   /* index filtré de la map chargée (-1 = aucune) */
+    float   delay;       /* debounce avant chargement */
+    int     pendingIdx;  /* index filtré en attente */
+} PreviewState;
+
 int main(int argc, char **argv) {
     const char *argPath = NULL;
     int  width = 960, height = 540;
@@ -302,10 +314,32 @@ int main(int argc, char **argv) {
     Play play; memset(&play, 0, sizeof play);
     Calib calib; memset(&calib, 0, sizeof calib);
     AppScreen screen = SCR_LOADING;
+    AppScreen prevScreen = SCR_LOADING;
     bool directFilePlayed = false;
     double cdRemain = 0.0;
 
+    PreviewState preview;
+    memset(&preview, 0, sizeof preview);
+    preview.loadedIdx  = -1;
+    preview.pendingIdx = -1;
+
     while (!WindowShouldClose()) {
+        /* Nettoyage du preview quand on quitte le menu (detecte l'iteration suivante) */
+        if (prevScreen == SCR_MENU && screen != SCR_MENU) {
+            if (preview.haveMusic) {
+                StopMusicStream(preview.music);
+                UnloadMusicStream(preview.music);
+                preview.haveMusic = false;
+            }
+            if (preview.haveMap) { sspm_free(&preview.sspm); preview.haveMap = false; }
+            gPreviewPlaying    = false;
+            preview.loadedIdx  = -1;
+            preview.pendingIdx = -1;
+            preview.delay      = 0.0f;
+            gPreviewBtnRect    = (Rectangle){0, 0, 0, 0};
+        }
+        prevScreen = screen;
+
         float dt = GetFrameTime();
         int sw = GetScreenWidth(), sh = GetScreenHeight();
         if (IsKeyPressed(KEY_F11)) toggle_fullscreen(width, height);
@@ -589,6 +623,7 @@ int main(int argc, char **argv) {
                             gMusicVolume = clampf(gMusicVolume + wheel * 0.05f, 0.0f, 1.0f);
                             gSettings.musicVolume = gMusicVolume;
                             settings_save(&gSettings);
+                            if (preview.haveMusic) SetMusicVolume(preview.music, gMusicVolume);
                             wheel = 0.0f;
                         }
                     }
@@ -720,6 +755,89 @@ int main(int argc, char **argv) {
                                     }
                                 } else { free(cdata); }
                             }
+                        }
+                    }
+                }
+            }
+
+            /* ------------------------------------------------------------------ */
+            /*  Preview audio : chargement deounce + update + clic bouton       */
+            /* ------------------------------------------------------------------ */
+            {
+                bool inFT = (menu.viewTab == 1 && menu.collSel < 0);
+
+                /* Debounce : nouvelle selection */
+                if (!inFT && menu.filteredCount > 0 && menu.sel != preview.pendingIdx) {
+                    preview.pendingIdx = menu.sel;
+                    preview.delay = 0.18f;
+                }
+                if (inFT && preview.pendingIdx >= 0) {
+                    preview.pendingIdx = -1;
+                    preview.delay = 0.0f;
+                }
+
+                /* Fire : charger le nouveau preview */
+                if (preview.delay > 0.0f) {
+                    preview.delay -= dt;
+                    if (preview.delay <= 0.0f && preview.pendingIdx != preview.loadedIdx) {
+                        if (preview.haveMusic) {
+                            StopMusicStream(preview.music);
+                            UnloadMusicStream(preview.music);
+                            preview.haveMusic = false;
+                        }
+                        if (preview.haveMap) { sspm_free(&preview.sspm); preview.haveMap = false; }
+                        gPreviewPlaying   = false;
+                        preview.loadedIdx = preview.pendingIdx;
+
+                        int ci2 = (preview.loadedIdx >= 0 && preview.loadedIdx < menu.filteredCount)
+                                  ? (menu.filtered ? menu.filtered[preview.loadedIdx] : preview.loadedIdx) : -1;
+                        if (ci2 >= 0 && ci2 < menu.count && menu.items[ci2].info.hasAudio) {
+                            if (sspm_load(menu.items[ci2].path, &preview.sspm)) {
+                                preview.haveMap = true;
+                                if (preview.sspm.hasAudio && preview.sspm.audio) {
+                                    preview.music = LoadMusicStreamFromMemory(
+                                        preview.sspm.audioExt,
+                                        preview.sspm.audio,
+                                        (int)preview.sspm.audioLen);
+                                    if (preview.music.stream.buffer) {
+                                        preview.haveMusic = true;
+                                        SetMusicVolume(preview.music, gMusicVolume);
+                                        if (!preview.userPaused) {
+                                            PlayMusicStream(preview.music);
+                                            gPreviewPlaying = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                /* Update du stream actif + boucle automatique */
+                if (preview.haveMusic && gPreviewPlaying) {
+                    UpdateMusicStream(preview.music);
+                    float pt = GetMusicTimeLength(preview.music);
+                    float pp = GetMusicTimePlayed(preview.music);
+                    if (pt > 0.5f && pp >= pt - 0.1f) {
+                        SeekMusicStream(preview.music, 0.0f);
+                        PlayMusicStream(preview.music);
+                    }
+                }
+
+                /* Clic sur le bouton preview */
+                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+                    !inFT && menu.filteredCount > 0 &&
+                    gPreviewBtnRect.width > 0 &&
+                    CheckCollisionPointRec(GetMousePosition(), gPreviewBtnRect)) {
+                    if (preview.haveMusic) {
+                        if (gPreviewPlaying) {
+                            PauseMusicStream(preview.music);
+                            gPreviewPlaying    = false;
+                            preview.userPaused = true;
+                        } else {
+                            PlayMusicStream(preview.music);
+                            gPreviewPlaying    = true;
+                            preview.userPaused = false;
                         }
                     }
                 }
@@ -1349,6 +1467,8 @@ int main(int argc, char **argv) {
     if (gLoader.threadStarted) athread_join(&gLoader);
     menu_scan_join(&gMenuScanner);
     play_unload(&play);
+    if (preview.haveMusic) { UnloadMusicStream(preview.music); preview.haveMusic = false; }
+    if (preview.haveMap)   { sspm_free(&preview.sspm); preview.haveMap = false; }
     notemesh_clear();
     cursortex_clear();
     hitsound_clear();
