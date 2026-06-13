@@ -6,9 +6,9 @@
 
 Rectangle opt_btn_rect(int sw)     { return (Rectangle){ (float)(sw - 146), 4.0f, 130.0f, 28.0f }; }
 Rectangle modes_btn_rect(int sw)   { return (Rectangle){ (float)(sw - 286), 4.0f, 130.0f, 28.0f }; }
-/* 4 chips Normal/Zen/Ladder/Practice au-dessus du bouton JOUER (panneau gauche). */
+/* 5 chips Normal/Zen/Ladder/Practice/Autoplay au-dessus du bouton JOUER (panneau gauche). */
 Rectangle menu_mode_chip_rect(int panelX, int sh, int idx) {
-    int tx = 38, bw = panelX - tx - 30, cw = (bw - 12) / 4;
+    int tx = 38, bw = panelX - tx - 30, cw = (bw - 16) / 5;
     return (Rectangle){ (float)(tx + idx * (cw + 4)), (float)(sh - 90), (float)cw, 22.0f };
 }
 /* Bouton JOUER dans le panneau gauche. */
@@ -780,21 +780,23 @@ void menu_draw(Menu *m, int sw, int sh) {
             DrawText("No personal record set", tx, ty + 8, 17, (Color){ 90, 90, 115, 255 });
         }
 
-        /* Chips de mode : Normal / Zen / Ladder / Practice */
+        /* Chips de mode : Normal / Zen / Ladder / Practice / Autoplay */
         {
-            static const char *mnames[4] = { "Normal", "Zen", "Ladder", "Practice" };
-            static const Color mcols[4]  = {
+            static const char *mnames[5] = { "Normal", "Zen", "Ladder", "Practice", "Auto" };
+            static const Color mcols[5]  = {
                 { 100, 180, 255, 255 }, { 130, 220, 200, 255 },
-                { 255, 170, 90, 255 },  { 130, 200, 255, 255 }
+                { 255, 170, 90,  255 }, { 130, 200, 255, 255 },
+                { 190, 130, 255, 255 }
             };
-            static const char *tips[4] = {
+            static const char *tips[5] = {
                 "Normal play  -  score saved",
                 "No HP, no game over",
                 "Speed increases each clear",
-                "Custom A/B loop & speed"
+                "Custom A/B loop & speed",
+                "Cursor plays itself — watch the map"
             };
             int hovChip = -1;
-            for (int mi = 0; mi < 4; mi++) {
+            for (int mi = 0; mi < 5; mi++) {
                 Rectangle cr = menu_mode_chip_rect(panelX, sh, mi);
                 bool on = (gMenuMode == mi), ov = CheckCollisionPointRec(mp, cr);
                 if (ov) hovChip = mi;

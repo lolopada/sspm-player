@@ -375,6 +375,8 @@ void play_reset(Play *p) {
     p->partHead    = 0;
     for (int i = 0; i < MAX_PARTICLES; i++) p->parts[i].life = 0.0f;
     p->pulse = 0.0f; p->hitFlash = 0.0f; p->comboFlashT = 0.0f; p->comboFlashN = 0;
+    p->apFromX = 0.0f; p->apFromY = 0.0f; p->apFromMs = 0.0f;
+    p->apTargetNote = UINT32_MAX; p->apVelX = 0.0f; p->apVelY = 0.0f;
 }
 
 /* Mode Entrainement : repositionne la lecture a `ms` (seek musique + horloge +
@@ -406,6 +408,8 @@ void play_seek(Play *p, float ms) {
     p->trailLastX = p->cx; p->trailLastY = p->cy;
     for (int i = 0; i < MAX_PARTICLES; i++) p->parts[i].life = 0.0f;
     p->pulse = 0.0f; p->hitFlash = 0.0f; p->comboFlashT = 0.0f; p->comboFlashN = 0;
+    p->apFromX = p->cx; p->apFromY = p->cy; p->apFromMs = ms;
+    p->apTargetNote = UINT32_MAX; p->apVelX = 0.0f; p->apVelY = 0.0f;
 }
 
 /* Emet n particules depuis 'at' (plan z=0), explosant vers l'exterieur. */
@@ -442,7 +446,56 @@ static void juice_update(Play *p, float dt) {
 }
 
 void play_cursor(Play *p, bool autoplay, int sw, int sh) {
-    if (autoplay) return;
+    if (autoplay) {
+        float now = p->nowMs - gAudioOffsetMs;
+        /* Trouver la prochaine note pending */
+        uint32_t to_i = p->N;
+        for (size_t i = p->head; i < p->N; i++) {
+            if (p->state[i] == NOTE_PENDING) { to_i = (uint32_t)i; break; }
+        }
+        if (to_i == p->N) return;
+        float toX  = note_wx(&p->map.notes[to_i]);
+        float toY  = note_wy(&p->map.notes[to_i]);
+        float toMs = p->map.notes[to_i].ms;
+        /* Si la cible a change : memoriser la direction du segment sortant (tangente d'entree)
+         * et sauvegarder la position reelle comme nouveau point de depart. */
+        if (to_i != p->apTargetNote) {
+            float odx = p->cx - p->apFromX;
+            float ody = p->cy - p->apFromY;
+            float olen = sqrtf(odx * odx + ody * ody);
+            if (olen > 0.001f) {
+                p->apVelX = odx / olen;
+                p->apVelY = ody / olen;
+            }
+            /* sinon on conserve la velocite precedente (ou zero pour la 1re note) */
+            p->apFromX      = p->cx;
+            p->apFromY      = p->cy;
+            p->apFromMs     = now;
+            p->apTargetNote = to_i;
+        }
+        float span = toMs - p->apFromMs;
+        float t = (span > 0.001f) ? clampf((now - p->apFromMs) / span, 0.0f, 1.0f) : 1.0f;
+        /* ease-out cubique */
+        t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+
+        float dx = toX - p->apFromX, dy = toY - p->apFromY;
+        float segLen = sqrtf(dx * dx + dy * dy);
+        /* Bezier quadratique : P0=depart, P1=tangente d'entree projetee, P2=cible.
+         * Le point de controle en direction du segment precedent cree un virage souple
+         * au lieu d'un changement de cap abrupt. */
+        if (segLen > 0.01f && (p->apVelX * p->apVelX + p->apVelY * p->apVelY) > 0.001f) {
+            float k     = segLen * 0.4f;
+            float ctrlX = p->apFromX + p->apVelX * k;
+            float ctrlY = p->apFromY + p->apVelY * k;
+            float u     = 1.0f - t;
+            p->cx = u * u * p->apFromX + 2.0f * u * t * ctrlX + t * t * toX;
+            p->cy = u * u * p->apFromY + 2.0f * u * t * ctrlY + t * t * toY;
+        } else {
+            p->cx = p->apFromX + dx * t;
+            p->cy = p->apFromY + dy * t;
+        }
+        return;
+    }
     if (gTablet) {
         /* tablette : position absolue du stylet projetee sur le plan de jeu.
          * halfH/halfW precalcules : le tanf n'est recalcule qu'au changement de taille d'ecran.
@@ -508,7 +561,7 @@ void play_update(Play *p, bool autoplay, float dt, int sw, int sh) {
          * age) ; lent -> points rares, jamais empiles (plus de paté) ; rapide ->
          * trous combles. trailSpacing est en pixels : on le convertit en unites
          * monde via l'echelle fixe de la camera (z=0). */
-        if (!autoplay && gCursor.trailEnabled && gCursor.trailSpacing > 0.0f) {
+        if (gCursor.trailEnabled && gCursor.trailSpacing > 0.0f) {
             int   projH      = gRtH > 0 ? gRtH : sh;
             float pxPerWorld = (projH > 0) ? (float)projH / (2.0f * tanf(35.0f * (PI / 180.0f)) * CAM_BACK) : 1.0f;
             float spacing    = (pxPerWorld > 0.0001f) ? gCursor.trailSpacing / pxPerWorld : 0.0f;
@@ -621,6 +674,7 @@ void play_update(Play *p, bool autoplay, float dt, int sw, int sh) {
 
 /* Scene 3D : grille, notes (cube ou mesh), effets, curseur (utilise p->nowMs). */
 void play_draw_scene(Play *p, Camera3D cam, bool autoplay) {
+    (void)autoplay;
     /* Fond procedural — dessin 2D avant le mode 3D (appelle ClearBackground). */
     bg_draw(gSettings.bgStyle, gSettings.bgIntensity);
 
@@ -688,7 +742,7 @@ void play_draw_scene(Play *p, Camera3D cam, bool autoplay) {
        GetWorldToScreen() utilise la taille de la FENETRE ; quand on rend dans
        une RT basse resolution il faut projeter avec la taille de la RT, sinon
        le curseur/la trainee sont decentres et rognes. */
-    if (!autoplay) {
+    {
         int projW = gRtW > 0 ? gRtW : GetScreenWidth();
         int projH = gRtH > 0 ? gRtH : GetScreenHeight();
         const CursorConfig *c = &gCursor;
@@ -827,13 +881,15 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
         DrawText(TextFormat("%c", gl), 14, 112, 28, gc);
     }
 
-    /* banniere de mode (Zen / Ladder / Aim / Practice) */
-    if (gMode != MODE_NORMAL) {
-        const char *mt = gMode == MODE_ZEN      ? "ZEN"
+    /* banniere de mode (Autoplay / Zen / Ladder / Aim / Practice) */
+    if (autoplay || gMode != MODE_NORMAL) {
+        const char *mt = autoplay          ? "AUTOPLAY"
+                       : gMode == MODE_ZEN      ? "ZEN"
                        : gMode == MODE_LADDER    ? TextFormat("SPEED LADDER  -  Lv. %d  -  %gx", gLadderLevel + 1, gRate)
                        : gMode == MODE_PRACTICE  ? TextFormat("PRACTICE  -  %.2fx", gRate)
                        :                            "AIM TRAINER";
-        Color mc = gMode == MODE_ZEN      ? (Color){ 130, 220, 200, 255 }
+        Color mc = autoplay          ? (Color){ 190, 130, 255, 255 }
+                 : gMode == MODE_ZEN      ? (Color){ 130, 220, 200, 255 }
                  : gMode == MODE_LADDER    ? (Color){ 255, 170, 90, 255 }
                  : gMode == MODE_PRACTICE  ? (Color){ 130, 200, 255, 255 }
                  :                            (Color){ 180, 160, 255, 255 };
