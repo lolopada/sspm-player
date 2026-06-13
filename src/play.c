@@ -10,8 +10,9 @@ static bool mods_label(char *buf, size_t n) {
     if (gMods & MOD_HIDDEN)   MODS_ADD("HD");
     if (gMods & MOD_NOFAIL)   MODS_ADD("NF");
     if (gMods & MOD_SUDDEN)   MODS_ADD("SD");
-    if (gMods & MOD_MIRROR_X) MODS_ADD("MH");
-    if (gMods & MOD_MIRROR_Y) MODS_ADD("MV");
+    if (gMods & MOD_MIRROR_X)   MODS_ADD("MH");
+    if (gMods & MOD_MIRROR_Y)   MODS_ADD("MV");
+    if (gMods & MOD_FLASHLIGHT) MODS_ADD("FL");
     if (gRate != 1.0f) { char r[16]; snprintf(r, sizeof r, "%gx", gRate); MODS_ADD(r); }
     #undef MODS_ADD
     return buf[0] != '\0';
@@ -744,6 +745,28 @@ void play_draw_scene(Play *p, Camera3D cam, bool autoplay) {
             cursor_generated(cpos, c);   /* coeur + halo dessines APRES la trainee */
             if (c->additive) EndBlendMode();
         }
+    }
+
+    /* Flashlight : zone sombre autour du curseur de jeu.
+       DrawRing(inner=r, outer=diagonale ecran) couvre tout ce qui est hors du cercle.
+       Le centre suit p->cx/cy (curseur de jeu, identique a la trainee). */
+    if (gMods & MOD_FLASHLIGHT) {
+        int fW = gRtW > 0 ? gRtW : GetScreenWidth();
+        int fH = gRtH > 0 ? gRtH : GetScreenHeight();
+        Vector2 fc = GetWorldToScreenEx((Vector3){ p->cx, p->cy, 0.0f }, cam, fW, fH);
+        float r  = (float)fH * 0.26f;
+        float ro = sqrtf((float)(fW * fW + fH * fH)) + r;
+        /* bord interieur progressif */
+        float feather = r * 0.28f;
+        int steps = 5;
+        for (int i = 0; i < steps; i++) {
+            float r0 = r - feather + feather * (float)i / steps;
+            float r1 = r - feather + feather * (float)(i + 1) / steps;
+            unsigned char a = (unsigned char)(210 * (i + 1) / steps);
+            DrawRing(fc, r0 < 0 ? 0 : r0, r1, 0.0f, 360.0f, 64, (Color){ 0, 0, 0, a });
+        }
+        /* zone sombre principale */
+        DrawRing(fc, r, ro, 0.0f, 360.0f, 128, (Color){ 0, 0, 0, 215 });
     }
 }
 

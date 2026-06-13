@@ -91,8 +91,9 @@ enum {
     MOD_HIDDEN   = 1 << 1,
     MOD_NOFAIL   = 1 << 2,
     MOD_SUDDEN   = 1 << 3,
-    MOD_MIRROR_X = 1 << 4,
-    MOD_MIRROR_Y = 1 << 5,
+    MOD_MIRROR_X  = 1 << 4,
+    MOD_MIRROR_Y  = 1 << 5,
+    MOD_FLASHLIGHT= 1 << 6,
 };
 
 /* --- styles / patterns aim trainer --- */
