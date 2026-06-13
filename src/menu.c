@@ -73,6 +73,36 @@ static float parse_star_rate(const char *path) {
     return v;
 }
 
+/* Derive le nom d'affichage depuis le chemin d'un .sspm :
+ * retire le prefixe "X.XX - " (star rate) et l'extension ".sspm". */
+static void name_from_file(const char *path, char *out, int outsz) {
+    const char *fname = GetFileName(path);
+    const char *sep = strstr(fname, " - ");
+    const char *start = fname;
+    if (sep) {
+        int plen = (int)(sep - fname);
+        if (plen > 0 && plen <= 16) {
+            char pre[17];
+            memcpy(pre, fname, (size_t)plen);
+            pre[plen] = '\0';
+            char *end;
+            float v = strtof(pre, &end);
+            if (end != pre && *end == '\0' && v >= 0.0f)
+                start = sep + 3;
+        }
+    }
+    snprintf(out, outsz, "%s", start);
+    char *dot = strrchr(out, '.');
+    if (dot && ci_cmp(dot, ".sspm") == 0) *dot = '\0';
+}
+
+/* Vrai si le nom est un placeholder generique laisse par l'editeur de map. */
+static bool is_placeholder(const char *s) {
+    return ci_cmp(s, "Artist name") == 0 ||
+           ci_cmp(s, "Song name")   == 0 ||
+           ci_cmp(s, "Map name")    == 0;
+}
+
 static int cmp_entry_name(const void *a, const void *b) {
     return ci_cmp(((const MenuEntry *)a)->info.songName,
                   ((const MenuEntry *)b)->info.songName);
@@ -209,8 +239,8 @@ void menu_scan(Menu *m) {
         snprintf(e->path, sizeof e->path, "%s", list.paths[i]);
         if (!sspm_load_info(e->path, &e->info))
             e->info.valid = false;
-        if (e->info.songName[0] == '\0')   /* secours : nom de fichier */
-            snprintf(e->info.songName, sizeof e->info.songName, "%s", GetFileName(list.paths[i]));
+        if (e->info.songName[0] == '\0' || is_placeholder(e->info.songName))
+            name_from_file(e->path, e->info.songName, sizeof e->info.songName);
         e->starRate = parse_star_rate(e->path);
         n++;
         m->scanCount = n;  /* progression visible par le thread principal */
