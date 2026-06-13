@@ -160,14 +160,16 @@ typedef enum {
     SCR_CALIBRATE,
     SCR_COUNTDOWN,
     SCR_PLAYING,
-    SCR_LOADING
+    SCR_LOADING,
+    SCR_PRACTICE_SETUP
 } AppScreen;
 
 typedef enum {
     MODE_NORMAL = 0,
     MODE_ZEN,
     MODE_LADDER,
-    MODE_AIM
+    MODE_AIM,
+    MODE_PRACTICE
 } GameMode;
 
 typedef enum {
@@ -538,6 +540,14 @@ extern float    gLadderRate;
 extern int      gLadderLevel;
 extern int      gMenuMode;
 
+/* mode Entrainement (Practice) : point de depart + boucle A/B (ms) + vitesse libre.
+ * gPracticeA  = ancre de depart (R / lancement) et debut de boucle.
+ * gPracticeB  = fin de boucle ; ignore si <= gPracticeA (joue jusqu'a la fin).
+ * gPracticeLoop = true -> boucle A..B ; false -> joue A..fin puis revient a A. */
+extern float gPracticeA;
+extern float gPracticeB;
+extern bool  gPracticeLoop;
+
 /* meshes personnalises */
 extern char gMeshNames[MAX_MESHES][128];
 extern int  gMeshCount;
@@ -648,6 +658,7 @@ void  cursor_config_defaults(CursorConfig *c);   /* valeurs par defaut (ref: ble
 
 void  play_unload(Play *p);
 void  play_reset(Play *p);
+void  play_seek(Play *p, float ms);
 void  play_cursor(Play *p, bool autoplay, int sw, int sh);
 void  play_update(Play *p, bool autoplay, float dt, int sw, int sh);
 void  play_draw_scene(Play *p, Camera3D cam, bool autoplay);

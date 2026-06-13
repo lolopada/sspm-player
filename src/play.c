@@ -376,6 +376,37 @@ void play_reset(Play *p) {
     p->pulse = 0.0f; p->hitFlash = 0.0f; p->comboFlashT = 0.0f; p->comboFlashN = 0;
 }
 
+/* Mode Entrainement : repositionne la lecture a `ms` (seek musique + horloge +
+ * etats des notes). Les notes avant `ms` sont marquees consommees (NOTE_HIT :
+ * ignorees par le hit-loop ET le rendu) ; celles a partir de `ms` repassent
+ * PENDING. Les stats de la section sont remises a zero pour refleter la tentative
+ * courante. Reutilise le motif de seek du skip-intro (cf. main.c). */
+void play_seek(Play *p, float ms) {
+    if (ms < 0.0f) ms = 0.0f;
+    /* premiere note dont le timestamp est >= ms (notes triees par ms) */
+    size_t h = 0;
+    while (h < p->N && p->map.notes[h].ms < ms) h++;
+    p->head = h;
+    if (p->state && p->N) {
+        if (h > 0)     memset(p->state,     NOTE_HIT,     h);            /* consommees : ignorees */
+        if (h < p->N)  memset(p->state + h, NOTE_PENDING, p->N - h);     /* a (re)jouer */
+    }
+    /* stats de la section (repartent a zero a chaque saut / boucle) */
+    p->score = p->hits = p->misses = p->combo = p->maxCombo = 0;
+    p->missTrackCount = 0;
+    p->missFlash = 0.0f;
+    p->hp = 1.0f;
+    p->finished = false; p->gameOver = false; p->endDelay = 0.0f; p->scoreSaved = false;
+    p->clockMs = (double)ms;
+    p->nowMs   = ms;
+    if (p->haveMusic) SeekMusicStream(p->music, ms > 0.0f ? ms / 1000.0f : 0.0f);
+    /* trainee + particules deviennent incoherentes apres un saut : on les efface */
+    p->trailHead = p->trailCount = 0;
+    p->trailLastX = p->cx; p->trailLastY = p->cy;
+    for (int i = 0; i < MAX_PARTICLES; i++) p->parts[i].life = 0.0f;
+    p->pulse = 0.0f; p->hitFlash = 0.0f; p->comboFlashT = 0.0f; p->comboFlashN = 0;
+}
+
 /* Emet n particules depuis 'at' (plan z=0), explosant vers l'exterieur. */
 static void juice_spawn(Play *p, Vector3 at, Color base, int n) {
     for (int k = 0; k < n; k++) {
@@ -439,18 +470,32 @@ void play_cursor(Play *p, bool autoplay, int sw, int sh) {
 
 /* Tick de jeu : horloge, curseur, hit/miss, culling, timers d'effets. */
 void play_update(Play *p, bool autoplay, float dt, int sw, int sh) {
-    if (p->haveMusic && gRate == 1.0f) {
+    /* Practice force l'horloge manuelle meme a 1.0x : on doit pouvoir seek/boucler
+     * librement (GetMusicTimePlayed suivrait l'audio sans nous laisser repositionner). */
+    bool masterClock = (p->haveMusic && gRate == 1.0f && gMode != MODE_PRACTICE);
+    if (masterClock) {
         /* horloge maitresse = position audio (synchro parfaite a vitesse normale) */
         if (!p->paused && !p->finished) UpdateMusicStream(p->music);
         p->nowMs = GetMusicTimePlayed(p->music) * 1000.0f;
     } else {
-        /* pas d'audio OU vitesse != 1.0 : horloge manuelle a la vitesse choisie.
+        /* pas d'audio OU vitesse != 1.0 OU Practice : horloge manuelle a la vitesse choisie.
          * L'audio (pitch regle sur gRate) avance a la meme cadence -> reste cale. */
         if (p->haveMusic && !p->paused && !p->finished) UpdateMusicStream(p->music);
         if (!p->paused && !p->finished) p->clockMs += (double)dt * 1000.0 * (double)gRate;
         p->nowMs = (float)p->clockMs;
     }
     if (p->haveMusic) SetMusicVolume(p->music, gMusicVolume);
+
+    /* Practice : boucle automatique. Quand on depasse la fin de section, on
+     * revient a l'ancre A (jamais d'ecran de resultats en entrainement). */
+    if (gMode == MODE_PRACTICE && !p->paused && !p->finished) {
+        float endMs = (gPracticeLoop && gPracticeB > gPracticeA + 1.0f)
+                      ? gPracticeB
+                      : (float)(p->map.lastMs > 0 ? p->map.lastMs : 0) + 400.0f;
+        if (p->nowMs >= endMs) {
+            play_seek(p, gPracticeA);
+        }
+    }
 
     if (!p->paused && !p->finished) {
         play_cursor(p, autoplay, sw, sh);
@@ -496,8 +541,8 @@ void play_update(Play *p, bool autoplay, float dt, int sw, int sh) {
         /* valeurs effectives selon les mods */
         float hitWin = gHitWindowMs * ((gMods & MOD_HARDROCK) ? 0.65f : 1.0f);
         float hpMiss = HP_MISS      * ((gMods & MOD_HARDROCK) ? 1.60f : 1.0f);
-        bool  noFail = (gMods & MOD_NOFAIL) != 0 || gMode == MODE_ZEN;
-        bool  sudden = (gMods & MOD_SUDDEN) != 0 && gMode != MODE_ZEN;
+        bool  noFail = (gMods & MOD_NOFAIL) != 0 || gMode == MODE_ZEN || gMode == MODE_PRACTICE;
+        bool  sudden = (gMods & MOD_SUDDEN) != 0 && gMode != MODE_ZEN && gMode != MODE_PRACTICE;
 
         float now = p->nowMs - gAudioOffsetMs;   /* offset audio : decale la synchro notes<->musique */
         for (size_t i = p->head; i < p->N; i++) {
@@ -553,7 +598,9 @@ void play_update(Play *p, bool autoplay, float dt, int sw, int sh) {
             float z = -gApproachDist * (p->map.notes[p->head].ms - now) / gApproachMs;
             if (z > gCullBehind) p->head++; else break;
         }
-        if (p->N > 0 && (p->hits + p->misses) >= (int)p->N && !p->finished && p->endDelay <= 0.0f)
+        /* fin par comptage : desactivee en Practice (la boucle gere le rebouclage) */
+        if (p->N > 0 && (p->hits + p->misses) >= (int)p->N && !p->finished
+            && p->endDelay <= 0.0f && gMode != MODE_PRACTICE)
             p->endDelay = 1.0f;
         juice_update(p, dt);
         bg_update(gSettings.bgStyle, dt);
@@ -718,15 +765,17 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
     DrawText(TextFormat("%s  -  %s", p->map.mapper, sspm_difficulty_name(p->map.difficulty)),
              14, 38, 16, (Color){ 180, 180, 195, 255 });
 
-    const char *scoreTxt = TextFormat("%d", p->score);
-    DrawText(scoreTxt, sw - 14 - MeasureText(scoreTxt, 30), 12, 30, RAYWHITE);
-    if (p->combo > 1) {
-        const char *c = TextFormat("x%d", p->combo);
-        DrawText(c, sw - 14 - MeasureText(c, 22), 46, 22, (Color){ 255, 220, 120, 255 });
+    if (gMode != MODE_PRACTICE) {
+        const char *scoreTxt = TextFormat("%d", p->score);
+        DrawText(scoreTxt, sw - 14 - MeasureText(scoreTxt, 30), 12, 30, RAYWHITE);
+        if (p->combo > 1) {
+            const char *c = TextFormat("x%d", p->combo);
+            DrawText(c, sw - 14 - MeasureText(c, 22), 46, 22, (Color){ 255, 220, 120, 255 });
+        }
+        { char modstr[64];
+          if (mods_label(modstr, sizeof modstr))
+              DrawText(modstr, sw - 14 - MeasureText(modstr, 16), 74, 16, (Color){ 255, 180, 90, 255 }); }
     }
-    { char modstr[64];
-      if (mods_label(modstr, sizeof modstr))
-          DrawText(modstr, sw - 14 - MeasureText(modstr, 16), 74, 16, (Color){ 255, 180, 90, 255 }); }
 
     int total = p->hits + p->misses;
     float acc = total > 0 ? (100.0f * p->hits / total) : 100.0f;
@@ -739,19 +788,21 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
         DrawText(gls, 14, 100, 30, gc);
     }
 
-    /* banniere de mode (Zen / Ladder / Aim) */
+    /* banniere de mode (Zen / Ladder / Aim / Practice) */
     if (gMode != MODE_NORMAL) {
-        const char *mt = gMode == MODE_ZEN    ? "ZEN"
-                       : gMode == MODE_LADDER  ? TextFormat("SPEED LADDER  -  Lv. %d  -  %gx", gLadderLevel + 1, gRate)
-                       :                          "AIM TRAINER";
-        Color mc = gMode == MODE_ZEN ? (Color){ 130, 220, 200, 255 }
-                 : gMode == MODE_LADDER ? (Color){ 255, 170, 90, 255 }
-                 :                         (Color){ 180, 160, 255, 255 };
+        const char *mt = gMode == MODE_ZEN      ? "ZEN"
+                       : gMode == MODE_LADDER    ? TextFormat("SPEED LADDER  -  Lv. %d  -  %gx", gLadderLevel + 1, gRate)
+                       : gMode == MODE_PRACTICE  ? TextFormat("PRACTICE  -  %.2fx", gRate)
+                       :                            "AIM TRAINER";
+        Color mc = gMode == MODE_ZEN      ? (Color){ 130, 220, 200, 255 }
+                 : gMode == MODE_LADDER    ? (Color){ 255, 170, 90, 255 }
+                 : gMode == MODE_PRACTICE  ? (Color){ 130, 200, 255, 255 }
+                 :                            (Color){ 180, 160, 255, 255 };
         DrawText(mt, sw / 2 - MeasureText(mt, 18) / 2, 12, 18, mc);
     }
 
-    /* barre de vie (cachee en Zen : pas de game over) */
-    if (!autoplay && gMode != MODE_ZEN) {
+    /* barre de vie (cachee en Zen et Practice : pas de game over) */
+    if (!autoplay && gMode != MODE_ZEN && gMode != MODE_PRACTICE) {
         int hpX = 14, hpY = 88, hpW = 180, hpH = 8;
         DrawRectangle(hpX, hpY, hpW, hpH, (Color){ 30, 20, 20, 200 });
         if (gGodMode) {
@@ -773,9 +824,35 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
     DrawRectangle(barX, barY, barW, 8, (Color){ 40, 40, 52, 255 });
     DrawRectangle(barX, barY, (int)(barW * prog), 8, (Color){ 90, 200, 255, 255 });
 
-    DrawText(autoplay ? "AUTOPLAY  -  SPACE pause  -  R restart  -  F11 fullscreen  -  ESC menu"
-                      : "Mouse/pen: aim  -  SPACE pause  -  R restart  -  F11 fullscreen  -  ESC menu",
-             14, sh - 46, 14, (Color){ 130, 130, 145, 255 });
+    /* Practice : ancre A + fin de section (B ou fin), region de boucle surlignee */
+    if (gMode == MODE_PRACTICE && p->map.lastMs > 0) {
+        float dur = (float)p->map.lastMs;
+        float ax  = (float)barX + (float)barW * clampf(gPracticeA / dur, 0.0f, 1.0f);
+        bool  loop = (gPracticeLoop && gPracticeB > gPracticeA + 1.0f);
+        float endMs = loop ? gPracticeB : dur;
+        float bx  = (float)barX + (float)barW * clampf(endMs / dur, 0.0f, 1.0f);
+        if (loop) {
+            DrawRectangle((int)ax, barY - 2, (int)(bx - ax), 12, (Color){ 120, 200, 255, 45 });
+            DrawRectangle((int)bx - 1, barY - 4, 3, 16, (Color){ 255, 170, 90, 235 });   /* B (orange) */
+        }
+        DrawRectangle((int)ax - 1, barY - 4, 3, 16, (Color){ 110, 235, 140, 235 });       /* A (vert) */
+    }
+
+    if (gMode == MODE_PRACTICE) {
+        char loopBuf[96];
+        if (gPracticeLoop && gPracticeB > gPracticeA + 1.0f)
+            snprintf(loopBuf, sizeof loopBuf, "Loop ON  %.1f-%.1fs", gPracticeA / 1000.0f, gPracticeB / 1000.0f);
+        else
+            snprintf(loopBuf, sizeof loopBuf, "Loop OFF  (start %.1fs)", gPracticeA / 1000.0f);
+        DrawText(TextFormat("PRACTICE  %.2fx  -  %s", gRate, loopBuf),
+                 14, sh - 62, 14, (Color){ 130, 200, 255, 230 });
+        DrawText("<- -> seek   [ set A   ] set B   L loop   - / + speed   R restart   ESC menu",
+                 14, sh - 46, 14, (Color){ 130, 130, 145, 255 });
+    } else {
+        DrawText(autoplay ? "AUTOPLAY  -  SPACE pause  -  R restart  -  F11 fullscreen  -  ESC menu"
+                          : "Mouse/pen: aim  -  SPACE pause  -  R restart  -  F11 fullscreen  -  ESC menu",
+                 14, sh - 46, 14, (Color){ 130, 130, 145, 255 });
+    }
     /* hint skip intro : s'affiche tant que la premiere note est loin (>1 s) */
     if (!autoplay && !p->finished && p->N > 0) {
         float firstNoteTime = p->map.notes[0].ms - gAudioOffsetMs;
@@ -785,7 +862,8 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
             DrawText(skipTxt, sw / 2 - stw / 2, sh - 68, 15, (Color){ 100, 160, 255, 180 });
         }
     }
-    DrawText(TextFormat("%d FPS", GetFPS()), sw - 70, sh - 46, 14, (Color){ 110, 180, 110, 255 });
+    if (gMode != MODE_PRACTICE)
+        DrawText(TextFormat("%d FPS", GetFPS()), sw - 70, sh - 46, 14, (Color){ 110, 180, 110, 255 });
 
     if (p->missFlash > 0.0f) {
         unsigned char a = (unsigned char)(120.0f * clampf(p->missFlash / 0.28f, 0.0f, 1.0f));

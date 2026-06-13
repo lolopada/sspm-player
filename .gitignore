@@ -30,6 +30,7 @@ maps/*.sspm
 maps/APPROVED/
 maps/RANKED/
 maps/UNRANKED/
+maps/tmp/
 
 # OS noise
 .DS_Store
