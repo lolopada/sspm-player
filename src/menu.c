@@ -6,9 +6,9 @@
 
 Rectangle opt_btn_rect(int sw)     { return (Rectangle){ (float)(sw - 146), 4.0f, 130.0f, 28.0f }; }
 Rectangle modes_btn_rect(int sw)   { return (Rectangle){ (float)(sw - 286), 4.0f, 130.0f, 28.0f }; }
-/* 3 chips Normal/Zen/Speed Ladder au-dessus du bouton JOUER (panneau gauche). */
+/* 4 chips Normal/Zen/Ladder/Practice au-dessus du bouton JOUER (panneau gauche). */
 Rectangle menu_mode_chip_rect(int panelX, int sh, int idx) {
-    int tx = 38, bw = panelX - tx - 30, cw = (bw - 8) / 3;
+    int tx = 38, bw = panelX - tx - 30, cw = (bw - 12) / 4;
     return (Rectangle){ (float)(tx + idx * (cw + 4)), (float)(sh - 90), (float)cw, 22.0f };
 }
 /* Bouton JOUER dans le panneau gauche. */
@@ -719,25 +719,49 @@ void menu_draw(Menu *m, int sw, int sh) {
             DrawText("No personal record set", tx, ty + 8, 17, (Color){ 90, 90, 115, 255 });
         }
 
-        /* Chips de mode : Normal / Zen / Speed Ladder */
+        /* Chips de mode : Normal / Zen / Ladder / Practice */
         {
-            static const char *mnames[3] = { "Normal", "Zen", "Speed Ladder" };
-            static const Color mcols[3]  = {
-                { 100, 180, 255, 255 }, { 130, 220, 200, 255 }, { 255, 170, 90, 255 }
+            static const char *mnames[4] = { "Normal", "Zen", "Ladder", "Practice" };
+            static const Color mcols[4]  = {
+                { 100, 180, 255, 255 }, { 130, 220, 200, 255 },
+                { 255, 170, 90, 255 },  { 130, 200, 255, 255 }
             };
-            for (int mi = 0; mi < 3; mi++) {
+            static const char *tips[4] = {
+                "Normal play  -  score saved",
+                "No HP, no game over",
+                "Speed increases each clear",
+                "Custom A/B loop & speed"
+            };
+            int hovChip = -1;
+            for (int mi = 0; mi < 4; mi++) {
                 Rectangle cr = menu_mode_chip_rect(panelX, sh, mi);
                 bool on = (gMenuMode == mi), ov = CheckCollisionPointRec(mp, cr);
+                if (ov) hovChip = mi;
                 Color col = mcols[mi];
                 DrawRectangleRounded(cr, 0.3f, 4,
                     on ? (Color){ col.r/5, col.g/5, col.b/5, 255 } : (Color){ 20, 22, 32, 255 });
                 DrawRectangleLinesEx(cr, on ? 1.5f : 1.0f,
                     on  ? col
                     : ov ? (Color){ 80, 85, 110, 255 } : (Color){ 45, 48, 68, 255 });
-                int tw = MeasureText(mnames[mi], 13);
+                int fz = 12;
+                int tw = MeasureText(mnames[mi], fz);
                 DrawText(mnames[mi],
-                         (int)(cr.x + cr.width * 0.5f - tw * 0.5f), (int)(cr.y + 4),
-                         13, on ? RAYWHITE : (Color){ 145, 150, 174, 255 });
+                         (int)(cr.x + cr.width * 0.5f - tw * 0.5f), (int)(cr.y + 5),
+                         fz, on ? RAYWHITE : (Color){ 145, 150, 174, 255 });
+            }
+            /* Tooltip du chip survole */
+            if (hovChip >= 0) {
+                Rectangle cr = menu_mode_chip_rect(panelX, sh, hovChip);
+                const char *tip = tips[hovChip];
+                int fs = 12, ttw = MeasureText(tip, fs);
+                int tpw = ttw + 20, tph = 26;
+                int tpx = (int)(cr.x + cr.width * 0.5f) - tpw / 2;
+                int tpy = (int)cr.y - tph - 5;
+                if (tpx < 4) tpx = 4;
+                if (tpx + tpw > panelX - 4) tpx = panelX - 4 - tpw;
+                DrawRectangle(tpx, tpy, tpw, tph, (Color){ 12, 14, 26, 245 });
+                DrawRectangleLines(tpx, tpy, tpw, tph, (Color){ 70, 80, 130, 200 });
+                DrawText(tip, tpx + 10, tpy + 7, fs, (Color){ 200, 210, 240, 255 });
             }
         }
 

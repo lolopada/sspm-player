@@ -107,6 +107,11 @@ static void go_mode_map(Play *p, const char *path, GameMode mode,
                         double *cd, AppScreen *screen, bool autoplay) {
     gMode = mode;
     if (mode == MODE_LADDER) { gLadderRate = 1.0f; gLadderLevel = 0; }
+    if (mode == MODE_PRACTICE) {
+        /* Entrainement : depart au debut, pas de boucle, vitesse normale (reglable en jeu). */
+        gPracticeA = 0.0f; gPracticeB = 0.0f; gPracticeLoop = true;
+        gRate = 1.0f; gScoreMult = mods_score_mult(gMods, gRate);
+    }
     go_play(p, path, cd, screen, autoplay);
 }
 
@@ -195,6 +200,13 @@ static void loading_draw(int sw, int sh, float t, int count, int total) {
     }
 
     DrawText("ESC : quit", 14, sh - 26, 13, (Color){ 68, 72, 104, 255 });
+}
+
+/* Formatte des millisecondes en "m:ss.t" (dixièmes de seconde). */
+static void practice_fmt_ms(char *buf, int n, float ms) {
+    if (ms < 0.0f) ms = 0.0f;
+    int s = (int)(ms / 1000.0f);
+    snprintf(buf, n, "%d:%02d.%d", s / 60, s % 60, ((int)ms % 1000) / 100);
 }
 
 int main(int argc, char **argv) {
@@ -636,9 +648,9 @@ int main(int argc, char **argv) {
                     }
                 }
 
-                /* clic sur les chips Normal/Zen/Speed Ladder */
+                /* clic sur les chips Normal/Zen/Ladder/Practice */
                 if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-                    for (int mi = 0; mi < 3; mi++)
+                    for (int mi = 0; mi < 4; mi++)
                         if (CheckCollisionPointRec(mpNav, menu_mode_chip_rect(panelX2, sh, mi)))
                             gMenuMode = mi;
                 }
@@ -667,9 +679,10 @@ int main(int argc, char **argv) {
 
                 if (chosen >= 0 && chosen < menu.filteredCount) {
                     int idx = menu.filtered ? menu.filtered[chosen] : chosen;
-                    if      (gMenuMode == 1) go_mode_map(&play, menu.items[idx].path, MODE_ZEN,    &cdRemain, &screen, autoplay);
-                    else if (gMenuMode == 2) go_mode_map(&play, menu.items[idx].path, MODE_LADDER, &cdRemain, &screen, autoplay);
-                    else                     go_play    (&play, menu.items[idx].path,               &cdRemain, &screen, autoplay);
+                    if      (gMenuMode == 1) go_mode_map(&play, menu.items[idx].path, MODE_ZEN,      &cdRemain, &screen, autoplay);
+                    else if (gMenuMode == 2) go_mode_map(&play, menu.items[idx].path, MODE_LADDER,   &cdRemain, &screen, autoplay);
+                    else if (gMenuMode == 3) go_mode_map(&play, menu.items[idx].path, MODE_PRACTICE, &cdRemain, &screen, autoplay);
+                    else                     go_play    (&play, menu.items[idx].path,                 &cdRemain, &screen, autoplay);
                 }
             }
 
@@ -814,6 +827,260 @@ int main(int argc, char **argv) {
             if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
             EndDrawing();
         }
+        else if (screen == SCR_PRACTICE_SETUP) {
+            /* === Modal de configuration Practice =================================
+             * Affiche une timeline draggable pour choisir A (début) et B (fin de
+             * boucle), régler la vitesse, et lancer la map.  Apparaît une seule
+             * fois par chargement ; les redémarrages (KEY_R en jeu) passent
+             * directement au décompte car gLoadFinalized reste vrai.
+             * ===================================================================== */
+            static bool sPSdragA = false, sPSdragB = false;
+
+            float ps_total = play.map.lastMs > 0 ? (float)play.map.lastMs : 60000.0f;
+
+            /* Géométrie du panneau */
+            int ps_pw = 680, ps_ph = 430;
+            int ps_px = (sw - ps_pw) / 2, ps_py = (sh - ps_ph) / 2;
+            if (ps_py < 8) ps_py = 8;
+
+            /* Barre de timeline */
+            int ps_bx = ps_px + 44, ps_bw = ps_pw - 88;
+            int ps_by = ps_py + 148, ps_bh = 14;
+
+            /* Positions initiales des marqueurs */
+            float ps_an = clampf(gPracticeA / ps_total, 0.0f, 1.0f);
+            float ps_bn = clampf(gPracticeB / ps_total, 0.0f, 1.0f);
+            int ps_ax  = ps_bx + (int)(ps_an * ps_bw);
+            int ps_bxp = ps_bx + (int)(ps_bn * ps_bw);
+
+            /* Poignées (rectangles au-dessus de la barre, hHW=8, hH=22) */
+            int ps_hHW = 8, ps_hH = 22;
+            Rectangle ps_aHan = { (float)(ps_ax  - ps_hHW), (float)(ps_by - ps_hH - 2), (float)(ps_hHW*2), (float)ps_hH };
+            Rectangle ps_bHan = { (float)(ps_bxp - ps_hHW), (float)(ps_by - ps_hH - 2), (float)(ps_hHW*2), (float)ps_hH };
+            /* Zone de clic élargie pour faciliter le drag */
+            Rectangle ps_aHit = { (float)(ps_ax  - 14), (float)(ps_by - ps_hH - 4), 28.0f, (float)(ps_hH + ps_bh + 4) };
+            Rectangle ps_bHit = { (float)(ps_bxp - 14), (float)(ps_by - ps_hH - 4), 28.0f, (float)(ps_hH + ps_bh + 4) };
+
+            Vector2 ps_mp = GetMousePosition();
+            bool ps_mdn  = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+            bool ps_mpr  = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+            bool ps_mrl  = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+
+            if (ps_mrl) { sPSdragA = false; sPSdragB = false; }
+
+            /* Début du drag / clic sur la barre */
+            if (ps_mpr) {
+                bool onA = CheckCollisionPointRec(ps_mp, ps_aHit);
+                bool onB = CheckCollisionPointRec(ps_mp, ps_bHit);
+                Rectangle ps_barZone = { (float)ps_bx, (float)(ps_by - ps_hH - 4),
+                                         (float)ps_bw, (float)(ps_hH + ps_bh + 8) };
+                if      (onA && !onB) { sPSdragA = true; }
+                else if (onB && !onA) { sPSdragB = true; }
+                else if (onA &&  onB) {
+                    sPSdragA = (ps_mp.x <= (ps_ax + ps_bxp) * 0.5f);
+                    sPSdragB = !sPSdragA;
+                } else if (CheckCollisionPointRec(ps_mp, ps_barZone)) {
+                    float cMs = clampf((ps_mp.x - ps_bx) / (float)ps_bw, 0.0f, 1.0f) * ps_total;
+                    if (fabsf(cMs - gPracticeA) <= fabsf(cMs - gPracticeB)) { sPSdragA = true; gPracticeA = cMs; }
+                    else                                                       { sPSdragB = true; gPracticeB = cMs; }
+                }
+            }
+            /* Application du drag avec contrainte A < B - 200 ms */
+            if (ps_mdn) {
+                float ps_norm = clampf((ps_mp.x - ps_bx) / (float)ps_bw, 0.0f, 1.0f);
+                float ps_ms   = ps_norm * ps_total;
+                if (sPSdragA) gPracticeA = clampf(ps_ms, 0.0f, gPracticeB - 200.0f > 0.0f ? gPracticeB - 200.0f : 0.0f);
+                if (sPSdragB) gPracticeB = clampf(ps_ms, gPracticeA + 200.0f, ps_total);
+            }
+
+            /* Boutons vitesse (clic) */
+            int ps_spCX = ps_px + ps_pw / 2;
+            Rectangle ps_btnM = { (float)(ps_spCX - 84), (float)(ps_py + 256), 36.0f, 30.0f };
+            Rectangle ps_btnP = { (float)(ps_spCX + 48), (float)(ps_py + 256), 36.0f, 30.0f };
+            if (ps_mpr && CheckCollisionPointRec(ps_mp, ps_btnM)) gRate = clampf(gRate - 0.05f, 0.25f, 2.0f);
+            if (ps_mpr && CheckCollisionPointRec(ps_mp, ps_btnP)) gRate = clampf(gRate + 0.05f, 0.25f, 2.0f);
+
+            /* Bouton Loop */
+            Rectangle ps_btnLp = { (float)(ps_px + ps_pw - 124), (float)(ps_py + 184), 80.0f, 24.0f };
+            if (ps_mpr && CheckCollisionPointRec(ps_mp, ps_btnLp)) gPracticeLoop = !gPracticeLoop;
+
+            /* Bouton LAUNCH */
+            Rectangle ps_btnLn = { (float)(ps_spCX - 90), (float)(ps_py + ps_ph - 86), 180.0f, 44.0f };
+            bool ps_doLaunch = (ps_mpr && CheckCollisionPointRec(ps_mp, ps_btnLn))
+                            || IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)
+                            || IsKeyPressed(KEY_SPACE);
+            if (ps_doLaunch) {
+                gScoreMult = mods_score_mult(gMods, gRate);
+                if (play.haveMusic) SetMusicPitch(play.music, gRate);
+                cdRemain = COUNTDOWN_SEC;
+                screen   = SCR_COUNTDOWN;
+                /* Recache la souris pour le gameplay (comme go_play le ferait) */
+                if (!autoplay) {
+                    if (gTablet) { EnableCursor(); HideCursor(); }
+                    else DisableCursor();
+                }
+                BeginDrawing(); ClearBackground((Color){ 10, 10, 16, 255 }); EndDrawing();
+                continue;
+            }
+            if (IsKeyPressed(KEY_ESCAPE)) {
+                sPSdragA = sPSdragB = false;
+                go_menu(&play, &screen);
+                BeginDrawing(); ClearBackground((Color){ 10, 10, 16, 255 }); EndDrawing();
+                continue;
+            }
+            /* Raccourcis clavier vitesse + boucle */
+            if (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT)) gRate = clampf(gRate - 0.05f, 0.25f, 2.0f);
+            if (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD))      gRate = clampf(gRate + 0.05f, 0.25f, 2.0f);
+            if (IsKeyPressed(KEY_L)) gPracticeLoop = !gPracticeLoop;
+
+            /* Recalcul des positions après drag (pour le rendu) */
+            ps_an  = clampf(gPracticeA / ps_total, 0.0f, 1.0f);
+            ps_bn  = clampf(gPracticeB / ps_total, 0.0f, 1.0f);
+            ps_ax  = ps_bx + (int)(ps_an  * ps_bw);
+            ps_bxp = ps_bx + (int)(ps_bn  * ps_bw);
+            ps_aHan = (Rectangle){ (float)(ps_ax  - ps_hHW), (float)(ps_by - ps_hH - 2), (float)(ps_hHW*2), (float)ps_hH };
+            ps_bHan = (Rectangle){ (float)(ps_bxp - ps_hHW), (float)(ps_by - ps_hH - 2), (float)(ps_hHW*2), (float)ps_hH };
+            ps_aHit = (Rectangle){ (float)(ps_ax  - 14), (float)(ps_by - ps_hH - 4), 28.0f, (float)(ps_hH + ps_bh + 4) };
+            ps_bHit = (Rectangle){ (float)(ps_bxp - 14), (float)(ps_by - ps_hH - 4), 28.0f, (float)(ps_hH + ps_bh + 4) };
+            bool ps_aHov = CheckCollisionPointRec(ps_mp, ps_aHit);
+            bool ps_bHov = CheckCollisionPointRec(ps_mp, ps_bHit);
+
+            /* ---- RENDU ---- */
+            BeginDrawing();
+            ClearBackground((Color){ 10, 10, 16, 255 });
+
+            /* Halo de fond */
+            DrawCircleGradient((Vector2){ (float)(sw / 2), (float)(sh / 2) }, (float)(sh * 0.65f),
+                               (Color){ 18, 26, 64, 55 }, (Color){ 10, 10, 16, 0 });
+
+            /* Panneau principal */
+            DrawRectangle(ps_px, ps_py, ps_pw, ps_ph, (Color){ 14, 18, 36, 248 });
+            DrawRectangleLines(ps_px, ps_py, ps_pw, ps_ph, (Color){ 55, 85, 165, 210 });
+            /* Trait accent en haut */
+            DrawRectangle(ps_px + 2, ps_py, ps_pw - 4, 3, (Color){ 100, 170, 255, 200 });
+
+            /* Titre */
+            { const char *t = "PRACTICE MODE";
+              DrawText(t, ps_px + ps_pw/2 - MeasureText(t, 24)/2, ps_py + 18, 24, (Color){ 130, 200, 255, 255 }); }
+
+            /* Nom de la map */
+            { const char *mn = play.map.songName[0] ? play.map.songName : gCurrentMap;
+              DrawText(mn, ps_px + ps_pw/2 - MeasureText(mn, 15)/2, ps_py + 50, 15,
+                       (Color){ 165, 182, 225, 210 }); }
+
+            /* Durée */
+            { char ps_tot[24]; practice_fmt_ms(ps_tot, sizeof ps_tot, ps_total);
+              const char *ds = TextFormat("Duration  %s", ps_tot);
+              DrawText(ds, ps_px + ps_pw/2 - MeasureText(ds, 12)/2, ps_py + 72, 12,
+                       (Color){ 95, 120, 182, 175 });
+
+              /* Séparateurs */
+              DrawRectangleGradientH(ps_px+44, ps_py+96, ps_pw/2-44, 1, (Color){0,0,0,0}, (Color){50,75,148,180});
+              DrawRectangleGradientH(ps_px+ps_pw/2, ps_py+96, ps_pw/2-44, 1, (Color){50,75,148,180}, (Color){0,0,0,0});
+              DrawText("TIMELINE", ps_px + 44, ps_py + 106, 11, (Color){ 65, 98, 178, 200 });
+
+              /* Fond de barre */
+              DrawRectangle(ps_bx, ps_by, ps_bw, ps_bh, (Color){ 20, 26, 54, 255 });
+
+              /* Région A→B */
+              int ps_rgW = ps_bxp - ps_ax;
+              if (ps_rgW > 0) DrawRectangle(ps_ax, ps_by, ps_rgW, ps_bh, (Color){ 80, 148, 255, 38 });
+
+              /* Contour de barre */
+              DrawRectangleLines(ps_bx, ps_by, ps_bw, ps_bh, (Color){ 42, 62, 124, 200 });
+
+              /* Lignes verticales des marqueurs */
+              DrawRectangle(ps_ax  - 1, ps_by - ps_hH - 2, 2, ps_hH + ps_bh + 2, (Color){ 95, 215, 95, 185 });
+              DrawRectangle(ps_bxp - 1, ps_by - ps_hH - 2, 2, ps_hH + ps_bh + 2, (Color){ 255, 162, 55, 185 });
+
+              /* Poignée A (verte) */
+              DrawRectangle((int)ps_aHan.x, (int)ps_aHan.y, (int)ps_aHan.width, (int)ps_aHan.height,
+                            ps_aHov ? (Color){ 95, 210, 95, 248 } : (Color){ 65, 175, 65, 218 });
+              DrawRectangleLines((int)ps_aHan.x, (int)ps_aHan.y, (int)ps_aHan.width, (int)ps_aHan.height,
+                                 (Color){ 135, 255, 135, 205 });
+              DrawText("A", ps_ax - MeasureText("A", 11)/2, (int)ps_aHan.y + 6, 11, WHITE);
+
+              /* Poignée B (orange) */
+              DrawRectangle((int)ps_bHan.x, (int)ps_bHan.y, (int)ps_bHan.width, (int)ps_bHan.height,
+                            ps_bHov ? (Color){ 255, 175, 80, 248 } : (Color){ 218, 140, 50, 218 });
+              DrawRectangleLines((int)ps_bHan.x, (int)ps_bHan.y, (int)ps_bHan.width, (int)ps_bHan.height,
+                                 (Color){ 255, 200, 100, 205 });
+              DrawText("B", ps_bxp - MeasureText("B", 11)/2, (int)ps_bHan.y + 6, 11, WHITE);
+
+              /* Labels de temps sous la barre */
+              DrawText("0:00", ps_bx, ps_by + ps_bh + 4, 11, (Color){ 75, 105, 172, 172 });
+              DrawText(ps_tot, ps_bx + ps_bw - MeasureText(ps_tot, 11), ps_by + ps_bh + 4, 11,
+                       (Color){ 75, 105, 172, 172 }); }
+
+            /* Infos A / B en clair */
+            { char ps_ab[24], ps_bb[24];
+              practice_fmt_ms(ps_ab, sizeof ps_ab, gPracticeA);
+              practice_fmt_ms(ps_bb, sizeof ps_bb, gPracticeB);
+              DrawText(TextFormat("Start (A):  %s", ps_ab), ps_px + 44, ps_py + 188, 13,
+                       (Color){ 115, 215, 115, 225 });
+              DrawText(TextFormat("End (B):  %s",   ps_bb), ps_px + 240, ps_py + 188, 13,
+                       (Color){ 255, 172, 75, 225 }); }
+
+            /* Bouton Loop */
+            { bool lp_h = CheckCollisionPointRec(ps_mp, ps_btnLp);
+              DrawRectangle((int)ps_btnLp.x, (int)ps_btnLp.y, (int)ps_btnLp.width, (int)ps_btnLp.height,
+                            lp_h ? (Color){ 48, 68, 132, 238 } : (Color){ 26, 34, 70, 208 });
+              DrawRectangleLines((int)ps_btnLp.x, (int)ps_btnLp.y, (int)ps_btnLp.width, (int)ps_btnLp.height,
+                                 gPracticeLoop ? (Color){ 95, 215, 95, 228 } : (Color){ 55, 82, 152, 208 });
+              const char *lp_t = TextFormat("Loop  %s", gPracticeLoop ? "ON" : "OFF");
+              Color lp_c = gPracticeLoop ? (Color){ 115, 238, 115, 255 } : (Color){ 155, 170, 218, 208 };
+              DrawText(lp_t, (int)ps_btnLp.x + (int)ps_btnLp.width/2 - MeasureText(lp_t, 12)/2,
+                       (int)ps_btnLp.y + 6, 12, lp_c); }
+
+            /* Séparateur + label SPEED */
+            DrawRectangleGradientH(ps_px+44, ps_py+228, ps_pw/2-44, 1, (Color){0,0,0,0}, (Color){40,60,120,150});
+            DrawRectangleGradientH(ps_px+ps_pw/2, ps_py+228, ps_pw/2-44, 1, (Color){40,60,120,150}, (Color){0,0,0,0});
+            { const char *sl = "SPEED";
+              DrawText(sl, ps_spCX - MeasureText(sl, 12)/2, ps_py + 236, 12, (Color){ 105, 138, 198, 200 }); }
+
+            /* Bouton [ - ] */
+            { bool mh = CheckCollisionPointRec(ps_mp, ps_btnM);
+              DrawRectangle((int)ps_btnM.x, (int)ps_btnM.y, (int)ps_btnM.width, (int)ps_btnM.height,
+                            mh ? (Color){ 58, 78, 158, 238 } : (Color){ 26, 34, 70, 208 });
+              DrawRectangleLines((int)ps_btnM.x, (int)ps_btnM.y, (int)ps_btnM.width, (int)ps_btnM.height,
+                                 (Color){ 65, 98, 185, 208 });
+              DrawText("-", (int)ps_btnM.x + 12, (int)ps_btnM.y + 6, 20, RAYWHITE); }
+
+            /* Taux de vitesse centré */
+            { const char *rs = TextFormat("%.2f x", gRate);
+              DrawText(rs, ps_spCX - MeasureText(rs, 20)/2, ps_py + 260, 20, (Color){ 130, 200, 255, 255 }); }
+
+            /* Bouton [ + ] */
+            { bool ph2 = CheckCollisionPointRec(ps_mp, ps_btnP);
+              DrawRectangle((int)ps_btnP.x, (int)ps_btnP.y, (int)ps_btnP.width, (int)ps_btnP.height,
+                            ph2 ? (Color){ 58, 78, 158, 238 } : (Color){ 26, 34, 70, 208 });
+              DrawRectangleLines((int)ps_btnP.x, (int)ps_btnP.y, (int)ps_btnP.width, (int)ps_btnP.height,
+                                 (Color){ 65, 98, 185, 208 });
+              DrawText("+", (int)ps_btnP.x + 11, (int)ps_btnP.y + 6, 20, RAYWHITE); }
+
+            /* Séparateur bas */
+            DrawRectangleGradientH(ps_px+44, ps_py+ps_ph-104, ps_pw/2-44, 1, (Color){0,0,0,0}, (Color){50,75,148,180});
+            DrawRectangleGradientH(ps_px+ps_pw/2, ps_py+ps_ph-104, ps_pw/2-44, 1, (Color){50,75,148,180}, (Color){0,0,0,0});
+
+            /* Bouton LAUNCH */
+            { bool lnh = CheckCollisionPointRec(ps_mp, ps_btnLn);
+              DrawRectangle((int)ps_btnLn.x, (int)ps_btnLn.y, (int)ps_btnLn.width, (int)ps_btnLn.height,
+                            lnh ? (Color){ 68, 145, 255, 248 } : (Color){ 42, 108, 212, 220 });
+              DrawRectangleLines((int)ps_btnLn.x, (int)ps_btnLn.y, (int)ps_btnLn.width, (int)ps_btnLn.height,
+                                 (Color){ 118, 190, 255, 255 });
+              const char *lt = "LAUNCH";
+              DrawText(lt, (int)ps_btnLn.x + (int)ps_btnLn.width/2 - MeasureText(lt, 22)/2,
+                       (int)ps_btnLn.y + 10, 22, WHITE); }
+
+            /* Hints clavier */
+            DrawText("ESC : back to menu", ps_px + 12, ps_py + ps_ph - 20, 12, (Color){ 68, 82, 128, 182 });
+            { const char *eh = "ENTER / SPACE : launch";
+              DrawText(eh, ps_px + ps_pw - 12 - MeasureText(eh, 12), ps_py + ps_ph - 20, 12,
+                       (Color){ 68, 82, 128, 182 }); }
+
+            if (gSettings.cursorInMenu) cursor_draw_at(ps_mp, sh);
+            EndDrawing();
+        }
         else if (screen == SCR_COUNTDOWN) {
             if (IsKeyPressed(KEY_ESCAPE)) {
                 go_menu(&play, &screen);   /* join + unload */
@@ -843,14 +1110,25 @@ int main(int argc, char **argv) {
                         else fprintf(stderr, "Unreadable audio (%s): playing muted.\n", play.map.audioExt);
                     }
                     SetWindowTitle(TextFormat("SSPM Player - %s", play.map.songName));
+                    float prevRate = gRate;   /* preserve la vitesse Practice (reglee en jeu) au restart */
                     settings_apply(&gSettings);
-                    if (gMode == MODE_LADDER) { gRate = gLadderRate; gScoreMult = mods_score_mult(gMods, gRate); }
-                    if (play.haveMusic) SetMusicPitch(play.music, gRate);  /* Vitesse / Ladder : pitch = vitesse de lecture */
+                    if (gMode == MODE_LADDER)        { gRate = gLadderRate; gScoreMult = mods_score_mult(gMods, gRate); }
+                    else if (gMode == MODE_PRACTICE) { gRate = prevRate;    gScoreMult = mods_score_mult(gMods, gRate); }
+                    if (play.haveMusic) SetMusicPitch(play.music, gRate);  /* Vitesse / Ladder / Practice : pitch = vitesse de lecture */
                     play_reset(&play);
                     gLoader.state   = ALOAD_IDLE;
                     gLoadFinalized  = true;
                     cdRemain        = COUNTDOWN_SEC;
                     spinT           = 0.0f;
+                    if (gMode == MODE_PRACTICE) {
+                        /* Ouvre le modal de configuration avant le decompte */
+                        if (gPracticeB <= gPracticeA + 1.0f)
+                            gPracticeB = play.map.lastMs > 0 ? (float)play.map.lastMs : 0.0f;
+                        screen = SCR_PRACTICE_SETUP;
+                        EnableCursor(); ShowCursor();   /* souris necessaire pour le modal */
+                        BeginDrawing(); ClearBackground((Color){ 10, 10, 16, 255 }); EndDrawing();
+                        continue;
+                    }
                 }
                 if (!gLoadFinalized) {
                     /* Ecran de chargement de map */
@@ -906,7 +1184,9 @@ int main(int argc, char **argv) {
               DrawText(nt, rtw / 2 - MeasureText(nt, fs) / 2, rth / 2 - fs / 2, fs, RAYWHITE);
               const char *ready = (gMode == MODE_LADDER)
                   ? TextFormat("Speed Ladder  -  Level %d  -  %gx", gLadderLevel + 1, gRate)
-                  : (gMode == MODE_AIM ? "Aim Trainer" : "Get ready...");
+                  : (gMode == MODE_AIM      ? "Aim Trainer"
+                  : (gMode == MODE_PRACTICE ? TextFormat("Practice  -  %.2fx", gRate)
+                  :                            "Get ready..."));
               DrawText(ready, rtw / 2 - MeasureText(ready, 24) / 2, rth / 2 - fs / 2 - 44, 24,
                        (Color){ 180, 200, 255, 255 });
               DrawText(play.map.songName, 14, 12, 22, RAYWHITE);
@@ -924,6 +1204,7 @@ int main(int argc, char **argv) {
             if (cdRemain <= 0.0) {
                 if (play.haveMusic) { PlayMusicStream(play.music); SetMusicVolume(play.music, gMusicVolume); }
                 play.clockMs = 0.0;
+                if (gMode == MODE_PRACTICE) play_seek(&play, gPracticeA);  /* demarrer a l'ancre */
                 /* Comptabilise le temps de la partie precedente (cas restart KEY_R) */
                 if (sPlayStartTime > 0.0)
                     gProfile.totalPlayTimeSec += (float)(GetTime() - sPlayStartTime);
@@ -987,6 +1268,32 @@ int main(int argc, char **argv) {
                     play.trailLastX = play.cx; play.trailLastY = play.cy;
                     for (int _i = 0; _i < MAX_PARTICLES; _i++) play.parts[_i].life = 0.0f;
                     play.pulse = 0.0f; play.hitFlash = 0.0f;
+                }
+            }
+
+            /* Mode Entrainement : seek (<-/->), marqueurs de boucle ([ / ]), boucle (L), vitesse (-/+) */
+            if (gMode == MODE_PRACTICE && !play.paused && !play.finished) {
+                if (IsKeyPressed(KEY_LEFT))  play_seek(&play, play.nowMs - 2000.0f);
+                if (IsKeyPressed(KEY_RIGHT)) {
+                    float t  = play.nowMs + 2000.0f;
+                    float mx = (float)(play.map.lastMs > 0 ? play.map.lastMs : 0);
+                    if (mx > 0.0f && t > mx) t = mx;
+                    play_seek(&play, t);
+                }
+                if (IsKeyPressed(KEY_LEFT_BRACKET)) {        /* [ : poser A = position courante */
+                    gPracticeA = play.nowMs;
+                    if (gPracticeB < gPracticeA + 1.0f) gPracticeB = 0.0f;  /* B devenu invalide */
+                }
+                if (IsKeyPressed(KEY_RIGHT_BRACKET)) {       /* ] : poser B = position courante */
+                    if (play.nowMs > gPracticeA + 1.0f) gPracticeB = play.nowMs;
+                }
+                if (IsKeyPressed(KEY_L)) gPracticeLoop = !gPracticeLoop;   /* L : activer/couper la boucle */
+                bool spdDown = IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT);
+                bool spdUp   = IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD);
+                if (spdDown || spdUp) {
+                    gRate = clampf(gRate + (spdUp ? 0.05f : -0.05f), 0.25f, 2.0f);
+                    gScoreMult = mods_score_mult(gMods, gRate);
+                    if (play.haveMusic) SetMusicPitch(play.music, gRate);
                 }
             }
 

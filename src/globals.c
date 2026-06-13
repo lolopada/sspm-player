@@ -84,6 +84,11 @@ float    gLadderRate  = 1.0f;
 int      gLadderLevel = 0;
 int      gMenuMode    = 0;
 
+/* --- mode Entrainement (Practice) --- */
+float gPracticeA    = 0.0f;
+float gPracticeB    = 0.0f;
+bool  gPracticeLoop = false;
+
 /* --- meshes personnalises --- */
 char gMeshNames[MAX_MESHES][128];
 int  gMeshCount = 0;
