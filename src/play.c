@@ -375,6 +375,7 @@ void play_reset(Play *p) {
     p->partHead    = 0;
     for (int i = 0; i < MAX_PARTICLES; i++) p->parts[i].life = 0.0f;
     p->pulse = 0.0f; p->hitFlash = 0.0f; p->comboFlashT = 0.0f; p->comboFlashN = 0;
+    p->apFromX = 0.0f; p->apFromY = 0.0f; p->apFromMs = 0.0f; p->apTargetNote = UINT32_MAX;
 }
 
 /* Mode Entrainement : repositionne la lecture a `ms` (seek musique + horloge +
@@ -406,6 +407,7 @@ void play_seek(Play *p, float ms) {
     p->trailLastX = p->cx; p->trailLastY = p->cy;
     for (int i = 0; i < MAX_PARTICLES; i++) p->parts[i].life = 0.0f;
     p->pulse = 0.0f; p->hitFlash = 0.0f; p->comboFlashT = 0.0f; p->comboFlashN = 0;
+    p->apFromX = p->cx; p->apFromY = p->cy; p->apFromMs = ms; p->apTargetNote = UINT32_MAX;
 }
 
 /* Emet n particules depuis 'at' (plan z=0), explosant vers l'exterieur. */
@@ -443,24 +445,30 @@ static void juice_update(Play *p, float dt) {
 
 void play_cursor(Play *p, bool autoplay, int sw, int sh) {
     if (autoplay) {
-        /* Interpole entre la note precedente et la prochaine note pending (smoothstep). */
         float now = p->nowMs - gAudioOffsetMs;
-        size_t to_i = p->N;
+        /* Trouver la prochaine note pending */
+        uint32_t to_i = p->N;
         for (size_t i = p->head; i < p->N; i++) {
-            if (p->state[i] == NOTE_PENDING) { to_i = i; break; }
+            if (p->state[i] == NOTE_PENDING) { to_i = (uint32_t)i; break; }
         }
         if (to_i == p->N) return;
         float toX  = note_wx(&p->map.notes[to_i]);
         float toY  = note_wy(&p->map.notes[to_i]);
         float toMs = p->map.notes[to_i].ms;
-        float fromX = (to_i > 0) ? note_wx(&p->map.notes[to_i - 1]) : p->cx;
-        float fromY = (to_i > 0) ? note_wy(&p->map.notes[to_i - 1]) : p->cy;
-        float fromMs = (to_i > 0) ? p->map.notes[to_i - 1].ms : toMs - gApproachMs;
-        float span = toMs - fromMs;
-        float t = (span > 0.001f) ? clampf((now - fromMs) / span, 0.0f, 1.0f) : 1.0f;
-        t = t * t * (3.0f - 2.0f * t);  /* smoothstep */
-        p->cx = fromX + (toX - fromX) * t;
-        p->cy = fromY + (toY - fromY) * t;
+        /* Si la cible a change, sauvegarder la position REELLE du curseur comme point de depart.
+         * Evite le snap a la position de la note precedente a chaque transition. */
+        if (to_i != p->apTargetNote) {
+            p->apFromX      = p->cx;
+            p->apFromY      = p->cy;
+            p->apFromMs     = now;
+            p->apTargetNote = to_i;
+        }
+        float span = toMs - p->apFromMs;
+        float t = (span > 0.001f) ? clampf((now - p->apFromMs) / span, 0.0f, 1.0f) : 1.0f;
+        /* ease-out cubique : demarre vite, ralentit doucement en arrivant sur la note */
+        t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+        p->cx = p->apFromX + (toX - p->apFromX) * t;
+        p->cy = p->apFromY + (toY - p->apFromY) * t;
         return;
     }
     if (gTablet) {

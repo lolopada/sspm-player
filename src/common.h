@@ -380,6 +380,9 @@ typedef struct {
     float    hitFlash;
     float    comboFlashT;
     int      comboFlashN;
+    /* autoplay : position de depart reelle au changement de cible (evite le snap) */
+    float    apFromX, apFromY, apFromMs;
+    uint32_t apTargetNote;   /* index de la note cible courante ; UINT32_MAX = aucune */
 } Play;
 
 typedef struct {
