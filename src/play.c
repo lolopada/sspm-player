@@ -442,7 +442,27 @@ static void juice_update(Play *p, float dt) {
 }
 
 void play_cursor(Play *p, bool autoplay, int sw, int sh) {
-    if (autoplay) return;
+    if (autoplay) {
+        /* Interpole entre la note precedente et la prochaine note pending (smoothstep). */
+        float now = p->nowMs - gAudioOffsetMs;
+        size_t to_i = p->N;
+        for (size_t i = p->head; i < p->N; i++) {
+            if (p->state[i] == NOTE_PENDING) { to_i = i; break; }
+        }
+        if (to_i == p->N) return;
+        float toX  = note_wx(&p->map.notes[to_i]);
+        float toY  = note_wy(&p->map.notes[to_i]);
+        float toMs = p->map.notes[to_i].ms;
+        float fromX = (to_i > 0) ? note_wx(&p->map.notes[to_i - 1]) : p->cx;
+        float fromY = (to_i > 0) ? note_wy(&p->map.notes[to_i - 1]) : p->cy;
+        float fromMs = (to_i > 0) ? p->map.notes[to_i - 1].ms : toMs - gApproachMs;
+        float span = toMs - fromMs;
+        float t = (span > 0.001f) ? clampf((now - fromMs) / span, 0.0f, 1.0f) : 1.0f;
+        t = t * t * (3.0f - 2.0f * t);  /* smoothstep */
+        p->cx = fromX + (toX - fromX) * t;
+        p->cy = fromY + (toY - fromY) * t;
+        return;
+    }
     if (gTablet) {
         /* tablette : position absolue du stylet projetee sur le plan de jeu.
          * halfH/halfW precalcules : le tanf n'est recalcule qu'au changement de taille d'ecran.
@@ -508,7 +528,7 @@ void play_update(Play *p, bool autoplay, float dt, int sw, int sh) {
          * age) ; lent -> points rares, jamais empiles (plus de paté) ; rapide ->
          * trous combles. trailSpacing est en pixels : on le convertit en unites
          * monde via l'echelle fixe de la camera (z=0). */
-        if (!autoplay && gCursor.trailEnabled && gCursor.trailSpacing > 0.0f) {
+        if (gCursor.trailEnabled && gCursor.trailSpacing > 0.0f) {
             int   projH      = gRtH > 0 ? gRtH : sh;
             float pxPerWorld = (projH > 0) ? (float)projH / (2.0f * tanf(35.0f * (PI / 180.0f)) * CAM_BACK) : 1.0f;
             float spacing    = (pxPerWorld > 0.0001f) ? gCursor.trailSpacing / pxPerWorld : 0.0f;
@@ -621,6 +641,7 @@ void play_update(Play *p, bool autoplay, float dt, int sw, int sh) {
 
 /* Scene 3D : grille, notes (cube ou mesh), effets, curseur (utilise p->nowMs). */
 void play_draw_scene(Play *p, Camera3D cam, bool autoplay) {
+    (void)autoplay;
     /* Fond procedural — dessin 2D avant le mode 3D (appelle ClearBackground). */
     bg_draw(gSettings.bgStyle, gSettings.bgIntensity);
 
@@ -688,7 +709,7 @@ void play_draw_scene(Play *p, Camera3D cam, bool autoplay) {
        GetWorldToScreen() utilise la taille de la FENETRE ; quand on rend dans
        une RT basse resolution il faut projeter avec la taille de la RT, sinon
        le curseur/la trainee sont decentres et rognes. */
-    if (!autoplay) {
+    {
         int projW = gRtW > 0 ? gRtW : GetScreenWidth();
         int projH = gRtH > 0 ? gRtH : GetScreenHeight();
         const CursorConfig *c = &gCursor;
