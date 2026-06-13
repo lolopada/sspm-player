@@ -383,6 +383,7 @@ typedef struct {
     /* autoplay : position de depart reelle au changement de cible (evite le snap) */
     float    apFromX, apFromY, apFromMs;
     uint32_t apTargetNote;   /* index de la note cible courante ; UINT32_MAX = aucune */
+    float    apArcSign;      /* +1 ou -1 : cote de l'arc (change aleatoirement par note) */
 } Play;
 
 typedef struct {

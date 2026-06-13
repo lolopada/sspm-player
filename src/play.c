@@ -375,7 +375,8 @@ void play_reset(Play *p) {
     p->partHead    = 0;
     for (int i = 0; i < MAX_PARTICLES; i++) p->parts[i].life = 0.0f;
     p->pulse = 0.0f; p->hitFlash = 0.0f; p->comboFlashT = 0.0f; p->comboFlashN = 0;
-    p->apFromX = 0.0f; p->apFromY = 0.0f; p->apFromMs = 0.0f; p->apTargetNote = UINT32_MAX;
+    p->apFromX = 0.0f; p->apFromY = 0.0f; p->apFromMs = 0.0f;
+    p->apTargetNote = UINT32_MAX; p->apArcSign = 1.0f;
 }
 
 /* Mode Entrainement : repositionne la lecture a `ms` (seek musique + horloge +
@@ -407,7 +408,8 @@ void play_seek(Play *p, float ms) {
     p->trailLastX = p->cx; p->trailLastY = p->cy;
     for (int i = 0; i < MAX_PARTICLES; i++) p->parts[i].life = 0.0f;
     p->pulse = 0.0f; p->hitFlash = 0.0f; p->comboFlashT = 0.0f; p->comboFlashN = 0;
-    p->apFromX = p->cx; p->apFromY = p->cy; p->apFromMs = ms; p->apTargetNote = UINT32_MAX;
+    p->apFromX = p->cx; p->apFromY = p->cy; p->apFromMs = ms;
+    p->apTargetNote = UINT32_MAX; p->apArcSign = 1.0f;
 }
 
 /* Emet n particules depuis 'at' (plan z=0), explosant vers l'exterieur. */
@@ -462,13 +464,29 @@ void play_cursor(Play *p, bool autoplay, int sw, int sh) {
             p->apFromY      = p->cy;
             p->apFromMs     = now;
             p->apTargetNote = to_i;
+            p->apArcSign    = (GetRandomValue(0, 1) == 0) ? 1.0f : -1.0f;
         }
         float span = toMs - p->apFromMs;
         float t = (span > 0.001f) ? clampf((now - p->apFromMs) / span, 0.0f, 1.0f) : 1.0f;
-        /* ease-out cubique : demarre vite, ralentit doucement en arrivant sur la note */
+        /* ease-out cubique */
         t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
-        p->cx = p->apFromX + (toX - p->apFromX) * t;
-        p->cy = p->apFromY + (toY - p->apFromY) * t;
+
+        /* position lineaire interpolee */
+        float dx = toX - p->apFromX, dy = toY - p->apFromY;
+        float bx = p->apFromX + dx * t;
+        float by = p->apFromY + dy * t;
+
+        /* arc perpendiculaire au trajet, amplitude proportionnelle a la distance */
+        float len = sqrtf(dx * dx + dy * dy);
+        if (len > 0.01f) {
+            /* sinus pic a t=0.5, s'annule aux extremites */
+            float arc = len * 0.10f * sinf(t * 3.14159f) * p->apArcSign;
+            p->cx = bx + (-dy / len) * arc;
+            p->cy = by + ( dx / len) * arc;
+        } else {
+            p->cx = bx;
+            p->cy = by;
+        }
         return;
     }
     if (gTablet) {
