@@ -184,48 +184,6 @@ Place audio files here (`.wav`, `.ogg`, `.mp3`, `.flac`). The selected sound pla
 
 ---
 
-## Building from source (Windows)
-
-A portable GCC toolchain ([w64devkit](https://github.com/skeeto/w64devkit)) and a pre-compiled raylib are expected in `../tools/`:
-
-```
-tools/
-  w64devkit/   ← extract w64devkit-x64-*.7z.exe here
-  raylib/      ← extract raylib-*_win64_mingw-w64.zip here (must contain include/ and lib/)
-```
-
-Then build with Make (via w64devkit's shell) or with the provided batch script:
-
-```bash
-# w64devkit shell
-make
-
-# or, from cmd.exe / PowerShell
-build_win.bat
-```
-
-raylib is linked **statically** — the resulting `.exe` has no runtime DLL dependencies.
-
----
-
-## Technical notes
-
-- The master clock is `GetMusicTimePlayed()`, so rendering stays perfectly synced to audio. A fallback wall-clock is used when there is no audio track or when speed rate ≠ 1.
-- The entire `.sspm` file is loaded into RAM; audio is decoded directly from that buffer with no extra copy (`LoadMusicStreamFromMemory`).
-- Rendering is O(visible notes) per frame — only the notes in the current time window are drawn.
-- The cursor trail uses a fixed-size circular buffer (`TRAIL_MAX = 512`), emitted by distance rather than by time to avoid clumping at low frame rates.
-- Map loading is asynchronous (background thread), so the 3-2-1 countdown plays while the file is being parsed.
-
----
-
-## Known limitations
-
-- Default raylib font is ASCII only — map titles with accents or CJK characters may display incorrectly.
-- SSPM v2 only (all current Rhythia community maps are v2).
-- No online leaderboards, no mod support beyond the built-in ones.
-
----
-
 ## License
 
-[MIT](LICENSE) — not affiliated with NaN Studios or the Rhythia project.
+[GPL v3](LICENSE) — not affiliated with NaN Studios or the Rhythia project.
