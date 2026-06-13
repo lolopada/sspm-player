@@ -1,0 +1,3 @@
+# Northern lights — bright greens, blues and purples
+name=Aurora Borealis
+colors=40ffc0,40d0ff,8060ff,40ffe0,80a0ff

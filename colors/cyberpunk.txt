@@ -1,0 +1,3 @@
+# Cyberpunk neon — vivid pink, cyan and purple
+name=Cyberpunk
+colors=ff20c0,00fff0,a020ff,ffff00,00ff80

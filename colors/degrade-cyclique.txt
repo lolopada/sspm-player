@@ -1,0 +1,3 @@
+# Full-spectrum rainbow cycle — 50 steps, seamless loop
+name=Rainbow Cycle
+colors=00ff80,00f592,00eba4,00e0b6,00d6c8,00ccda,00c2ec,00b8fe,0aabfb,149ef7,1e91f4,2884f0,3277ec,3c6ae9,465de5,5050e1,5a43dd,6436da,6e29d6,781cd2,820fcf,8c02cb,9600c7,a000c3,aa00bf,b400bb,be00b7,c800b3,d200af,dc00ab,e600a7,f000a3,fa009f,ff0094,ff0084,ff0074,ff0064,ff0054,ff0044,ff0009,ff3100,ff6c00,ffa700,ffe200,e1ff00,a6ff00,6bff00,30ff00,00ff0a,00ff45

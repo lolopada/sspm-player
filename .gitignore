@@ -1,0 +1,36 @@
+# Build scripts & packaging
+build_win.bat
+pack_debian.ps1
+pack_windows.ps1
+profile_debian.sh
+
+# Documentation (internal / French)
+CODE.md
+COMMENT_JOUER.md
+
+# User config (machine-local)
+profile.cfg
+settings.cfg
+
+# Compiled output & archives
+sspm-player.exe
+sspm-player-src.zip
+sspm-player-windows.zip
+
+# Build directories
+*.o
+*.a
+src/*.o
+
+# Hitsounds — only bundle originals, not third-party files
+hitsounds/osu_*.mp3
+
+# Maps & user content (too large / user-provided)
+maps/*.sspm
+maps/APPROVED/
+maps/RANKED/
+maps/UNRANKED/
+
+# OS noise
+.DS_Store
+Thumbs.db
