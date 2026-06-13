@@ -98,9 +98,10 @@ static void name_from_file(const char *path, char *out, int outsz) {
 
 /* Vrai si le nom est un placeholder generique laisse par l'editeur de map. */
 static bool is_placeholder(const char *s) {
-    return ci_cmp(s, "Artist name") == 0 ||
-           ci_cmp(s, "Song name")   == 0 ||
-           ci_cmp(s, "Map name")    == 0;
+    return ci_cmp(s, "Artist name")             == 0 ||
+           ci_cmp(s, "Song name")               == 0 ||
+           ci_cmp(s, "Map name")                == 0 ||
+           ci_cmp(s, "Artist name - Song name") == 0;
 }
 
 static int cmp_entry_name(const void *a, const void *b) {
