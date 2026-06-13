@@ -55,6 +55,8 @@ static int build_opt_rows(int tab, int *rows) {
         if (gJuiceMode == 1 || gJuiceMode == 3) { rows[n++] = 23; rows[n++] = 24; rows[n++] = 25; rows[n++] = 26; }
         if (gJuiceMode == 2 || gJuiceMode == 3) { rows[n++] = 27; rows[n++] = 28; }
         if (gSettings.bgStyle != BG_NONE) rows[n++] = 81;   /* intensite : visible seulement si un fond est actif */
+        /* HUD configurable */
+        for (int g = 83; g <= 87; g++) rows[n++] = g;
     }
     if (tab == 4) {   /* Trainee : sous-options visibles seulement si activee */
         if (gSettings.cursor.trailEnabled) {
@@ -410,6 +412,11 @@ void settings_update(int sw, int sh) {
                 gSettings.cursorInMenu = !gSettings.cursorInMenu;
                 if (gSettings.cursorInMenu) HideCursor(); else ShowCursor();
                 break;
+            case 83: gSettings.hudShowScore    = !gSettings.hudShowScore;    break;
+            case 84: gSettings.hudShowCombo    = !gSettings.hudShowCombo;    break;
+            case 85: gSettings.hudShowAccuracy = !gSettings.hudShowAccuracy; break;
+            case 86: gSettings.hudShowHp       = !gSettings.hudShowHp;       break;
+            case 87: gSettings.hudShowSongInfo = !gSettings.hudShowSongInfo; break;
             default: break;
         }
         if (globalR != 9 && !(globalR >= 60 && globalR <= 76) && globalR != 77
@@ -721,7 +728,7 @@ void settings_draw(int sw, int sh) {
     DrawRectangle(pX - 16, sbY, 1, pBottom - sbY, (Color){ 36, 36, 52, 255 });
 
     /* === Panneau de reglages de la categorie active === */
-    static const char *const labels[83] = {
+    static const char *const labels[88] = {
         "Spawn distance", "Speed (approach time)",
         "Graphics tablet", "Color palette", "Note shape", "Image file",
         "God Mode", "Timing tolerance", "Note hue", "Mouse sensitivity",
@@ -762,7 +769,9 @@ void settings_draw(int sw, int sh) {
         /* 80-81 : background procedural */
         "Background", "Intensity",
         /* 82 : curseur dans les menus */
-        "Cursor in menus"
+        "Cursor in menus",
+        /* 83-87 : HUD configurable */
+        "HUD: Score", "HUD: Combo", "HUD: Accuracy", "HUD: HP bar", "HUD: Song info"
     };
 
     int last = scroll + maxVis; if (last > nOpts) last = nOpts;
@@ -896,6 +905,11 @@ void settings_draw(int sw, int sh) {
             } break;
             case 81: snprintf(val, sizeof val, "%d %%", (int)(gSettings.bgIntensity * 100.0f + 0.5f)); break;
             case 82: snprintf(val, sizeof val, "%s", gSettings.cursorInMenu ? "Yes" : "No"); break;
+            case 83: snprintf(val, sizeof val, "%s", gSettings.hudShowScore    ? "Show" : "Hide"); break;
+            case 84: snprintf(val, sizeof val, "%s", gSettings.hudShowCombo    ? "Show" : "Hide"); break;
+            case 85: snprintf(val, sizeof val, "%s", gSettings.hudShowAccuracy ? "Show" : "Hide"); break;
+            case 86: snprintf(val, sizeof val, "%s", gSettings.hudShowHp       ? "Show" : "Hide"); break;
+            case 87: snprintf(val, sizeof val, "%s", gSettings.hudShowSongInfo ? "Show" : "Hide"); break;
             default: snprintf(val, sizeof val, "?"); break;
         }
         int vw = MeasureText(val, fs);

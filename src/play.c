@@ -761,31 +761,47 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
     static int wHint = 0;
     if (!wHint)
         wHint = MeasureText("R replay    -    ESC menu", 20);
-    DrawText(p->map.songName, 14, 12, 22, RAYWHITE);
-    DrawText(TextFormat("%s  -  %s", p->map.mapper, sspm_difficulty_name(p->map.difficulty)),
-             14, 38, 16, (Color){ 180, 180, 195, 255 });
-
-    if (gMode != MODE_PRACTICE) {
-        const char *scoreTxt = TextFormat("%d", p->score);
-        DrawText(scoreTxt, sw - 14 - MeasureText(scoreTxt, 30), 12, 30, RAYWHITE);
-        if (p->combo > 1) {
-            const char *c = TextFormat("x%d", p->combo);
-            DrawText(c, sw - 14 - MeasureText(c, 22), 46, 22, (Color){ 255, 220, 120, 255 });
-        }
-        { char modstr[64];
-          if (mods_label(modstr, sizeof modstr))
-              DrawText(modstr, sw - 14 - MeasureText(modstr, 16), 74, 16, (Color){ 255, 180, 90, 255 }); }
-    }
 
     int total = p->hits + p->misses;
     float acc = total > 0 ? (100.0f * p->hits / total) : 100.0f;
-    DrawText(TextFormat("%d / %u   %.1f%%   misses: %d", p->hits, p->N, acc, p->misses),
-             14, 64, 16, (Color){ 150, 200, 255, 255 });
-    /* grade en temps reel (sous la barre de vie, a gauche) */
+
+    /* --- info chanson (haut gauche) --- */
+    if (gSettings.hudShowSongInfo) {
+        DrawText(p->map.songName, 14, 12, 22, RAYWHITE);
+        DrawText(TextFormat("%s  -  %s", p->map.mapper, sspm_difficulty_name(p->map.difficulty)),
+                 14, 38, 16, (Color){ 180, 180, 195, 255 });
+    }
+
+    /* --- compteurs haut droit (hors mode Practice) --- */
+    if (gMode != MODE_PRACTICE) {
+        int ry = 12;
+        if (gSettings.hudShowScore) {
+            const char *scoreTxt = TextFormat("%d", p->score);
+            DrawText(scoreTxt, sw - 14 - MeasureText(scoreTxt, 30), ry, 30, RAYWHITE);
+            ry += 36;
+        }
+        if (gSettings.hudShowAccuracy) {
+            Color gc; grade_letter(acc, &gc);
+            const char *accTxt = TextFormat("%.2f%%", acc);
+            DrawText(accTxt, sw - 14 - MeasureText(accTxt, 18), ry, 18, gc);
+            ry += 24;
+        }
+        if (gSettings.hudShowCombo && p->combo > 1) {
+            const char *c = TextFormat("x%d", p->combo);
+            DrawText(c, sw - 14 - MeasureText(c, 26), ry, 26, (Color){ 255, 220, 120, 255 });
+            ry += 32;
+        }
+        { char modstr[64];
+          if (mods_label(modstr, sizeof modstr))
+              DrawText(modstr, sw - 14 - MeasureText(modstr, 16), ry, 16, (Color){ 255, 180, 90, 255 }); }
+    }
+
+    /* --- hits/total (petit, gauche) + grade --- */
+    if (gSettings.hudShowAccuracy)
+        DrawText(TextFormat("%d / %u", p->hits, p->N), 14, 64, 14, (Color){ 100, 140, 190, 180 });
     if (!p->finished && total > 0) {
         Color gc; char gl = grade_letter(acc, &gc);
-        const char *gls = TextFormat("%c", gl);
-        DrawText(gls, 14, 100, 30, gc);
+        DrawText(TextFormat("%c", gl), 14, 112, 28, gc);
     }
 
     /* banniere de mode (Zen / Ladder / Aim / Practice) */
@@ -801,9 +817,9 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
         DrawText(mt, sw / 2 - MeasureText(mt, 18) / 2, 12, 18, mc);
     }
 
-    /* barre de vie (cachee en Zen et Practice : pas de game over) */
-    if (!autoplay && gMode != MODE_ZEN && gMode != MODE_PRACTICE) {
-        int hpX = 14, hpY = 88, hpW = 180, hpH = 8;
+    /* barre de vie (cachee en Zen/Practice ou si HUD HP desactive) */
+    if (gSettings.hudShowHp && !autoplay && gMode != MODE_ZEN && gMode != MODE_PRACTICE) {
+        int hpX = 14, hpY = 84, hpW = 180, hpH = 8;
         DrawRectangle(hpX, hpY, hpW, hpH, (Color){ 30, 20, 20, 200 });
         if (gGodMode) {
             DrawRectangle(hpX, hpY, hpW, hpH, (Color){ 255, 200, 40, 140 });
@@ -817,6 +833,8 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
         }
         DrawRectangleLinesEx((Rectangle){ (float)hpX, (float)hpY, (float)hpW, (float)hpH },
                               1.0f, (Color){ 120, 120, 140, 180 });
+        if (p->misses > 0)
+            DrawText(TextFormat("%d miss", p->misses), hpX, hpY + hpH + 5, 13, (Color){ 220, 90, 90, 200 });
     }
 
     float prog = (p->map.lastMs > 0) ? clampf(p->nowMs / (float)p->map.lastMs, 0.0f, 1.0f) : 0.0f;
