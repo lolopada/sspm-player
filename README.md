@@ -68,7 +68,7 @@ sudo apt install build-essential pkg-config libraylib-dev
 ### Linux — build from source
 
 ```bash
-git clone https://github.com/<you>/sspm-player
+git clone https://github.com/lolopada/sspm-player
 cd sspm-player
 make
 ./sspm-player
