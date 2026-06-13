@@ -491,6 +491,11 @@ void settings_defaults(Settings *s) {
     s->bgStyle      = BG_NONE;
     s->bgIntensity  = 0.5f;
     s->cursorInMenu = false;
+    s->hudShowScore    = true;
+    s->hudShowCombo    = true;
+    s->hudShowAccuracy = true;
+    s->hudShowHp       = true;
+    s->hudShowSongInfo = true;
 }
 
 void settings_load(Settings *s) {
@@ -511,6 +516,11 @@ void settings_load(Settings *s) {
         else if (strcmp(key, "bg_style")       == 0) { int v = atoi(val); s->bgStyle = (v >= 0 && v < BG_COUNT) ? (BgStyle)v : BG_NONE; }
         else if (strcmp(key, "bg_intensity")   == 0) s->bgIntensity = clampf((float)atof(val), 0.0f, 1.0f);
         else if (strcmp(key, "cursor_in_menu") == 0) s->cursorInMenu = (atoi(val) != 0);
+        else if (strcmp(key, "hud_score")      == 0) s->hudShowScore    = (atoi(val) != 0);
+        else if (strcmp(key, "hud_combo")      == 0) s->hudShowCombo    = (atoi(val) != 0);
+        else if (strcmp(key, "hud_accuracy")   == 0) s->hudShowAccuracy = (atoi(val) != 0);
+        else if (strcmp(key, "hud_hp")         == 0) s->hudShowHp       = (atoi(val) != 0);
+        else if (strcmp(key, "hud_song")       == 0) s->hudShowSongInfo = (atoi(val) != 0);
         else if (strcmp(key, "mesh")          == 0) snprintf(s->meshName, sizeof s->meshName, "%s", val);
         else if (strcmp(key, "cursor")        == 0) snprintf(s->cursorName, sizeof s->cursorName, "%s", val);
         else if (strcmp(key, "cursor_mode")   == 0) { int v = atoi(val); s->cursorMode = (v == 1) ? 1 : 0; }
@@ -652,6 +662,11 @@ void settings_save(const Settings *s) {
     o += snprintf(buf + o, sizeof buf - o, "bg_style=%d\n",       (int)s->bgStyle);
     o += snprintf(buf + o, sizeof buf - o, "bg_intensity=%.2f\n", s->bgIntensity);
     o += snprintf(buf + o, sizeof buf - o, "cursor_in_menu=%d\n", s->cursorInMenu ? 1 : 0);
+    o += snprintf(buf + o, sizeof buf - o, "hud_score=%d\n",    s->hudShowScore    ? 1 : 0);
+    o += snprintf(buf + o, sizeof buf - o, "hud_combo=%d\n",    s->hudShowCombo    ? 1 : 0);
+    o += snprintf(buf + o, sizeof buf - o, "hud_accuracy=%d\n", s->hudShowAccuracy ? 1 : 0);
+    o += snprintf(buf + o, sizeof buf - o, "hud_hp=%d\n",       s->hudShowHp       ? 1 : 0);
+    o += snprintf(buf + o, sizeof buf - o, "hud_song=%d\n",     s->hudShowSongInfo ? 1 : 0);
     o += snprintf(buf + o, sizeof buf - o, "key_quit=%d\n",           s->keys.quit);
     o += snprintf(buf + o, sizeof buf - o, "key_pause=%d\n",          s->keys.pause);
     o += snprintf(buf + o, sizeof buf - o, "key_restart=%d\n",        s->keys.restart);

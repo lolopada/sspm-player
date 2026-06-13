@@ -334,6 +334,12 @@ typedef struct {
     BgStyle bgStyle;            /* BG_NONE / BG_VOID / BG_CIRCUIT / BG_PULSE / BG_AURORA */
     float   bgIntensity;        /* 0.0 (invisible) .. 1.0 (plein), defaut 0.5 */
     bool    cursorInMenu;       /* affiche le curseur jeu dans les menus (masque le curseur systeme) */
+    /* --- HUD configurable --- */
+    bool    hudShowScore;
+    bool    hudShowCombo;
+    bool    hudShowAccuracy;
+    bool    hudShowHp;
+    bool    hudShowSongInfo;
     AimConfig   aim;
     KeyBindings keys;
 } Settings;
