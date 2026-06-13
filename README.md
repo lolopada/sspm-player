@@ -182,6 +182,20 @@ Place `.png` files here. The cursor is scaled automatically. Configure trail col
 
 Place audio files here (`.wav`, `.ogg`, `.mp3`, `.flac`). The selected sound plays on every hit.
 
+### Color palettes — `colors/`
+
+Place `.txt` files here to add custom note color palettes. Each file defines a named palette:
+
+```
+name=My Palette
+colors=ff0000,00ff00,0000ff
+```
+
+- `name` — displayed in the Options palette picker
+- `colors` — comma-separated hex RGB values cycled across notes
+
+Several palettes are included by default (`aurora.txt`, `cyberpunk.txt`, `sunset.txt`, …).
+
 ---
 
 ## License
