@@ -827,13 +827,15 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
         DrawText(TextFormat("%c", gl), 14, 112, 28, gc);
     }
 
-    /* banniere de mode (Zen / Ladder / Aim / Practice) */
-    if (gMode != MODE_NORMAL) {
-        const char *mt = gMode == MODE_ZEN      ? "ZEN"
+    /* banniere de mode (Autoplay / Zen / Ladder / Aim / Practice) */
+    if (autoplay || gMode != MODE_NORMAL) {
+        const char *mt = autoplay          ? "AUTOPLAY"
+                       : gMode == MODE_ZEN      ? "ZEN"
                        : gMode == MODE_LADDER    ? TextFormat("SPEED LADDER  -  Lv. %d  -  %gx", gLadderLevel + 1, gRate)
                        : gMode == MODE_PRACTICE  ? TextFormat("PRACTICE  -  %.2fx", gRate)
                        :                            "AIM TRAINER";
-        Color mc = gMode == MODE_ZEN      ? (Color){ 130, 220, 200, 255 }
+        Color mc = autoplay          ? (Color){ 190, 130, 255, 255 }
+                 : gMode == MODE_ZEN      ? (Color){ 130, 220, 200, 255 }
                  : gMode == MODE_LADDER    ? (Color){ 255, 170, 90, 255 }
                  : gMode == MODE_PRACTICE  ? (Color){ 130, 200, 255, 255 }
                  :                            (Color){ 180, 160, 255, 255 };

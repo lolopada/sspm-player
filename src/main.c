@@ -590,7 +590,7 @@ int main(int argc, char **argv) {
                 if (d.count > 0 && IsFileExtension(d.paths[0], ".sspm"))
                     snprintf(dropped, sizeof dropped, "%s", d.paths[0]);
                 UnloadDroppedFiles(d);
-                if (dropped[0]) go_play(&play, dropped, &cdRemain, &screen, autoplay);
+                if (dropped[0]) go_play(&play, dropped, &cdRemain, &screen, autoplay || (gMenuMode == 4));
             }
 
             /* --- navigation dans la liste filtree (osu!-style) --- */
@@ -683,9 +683,9 @@ int main(int argc, char **argv) {
                     }
                 }
 
-                /* clic sur les chips Normal/Zen/Ladder/Practice */
+                /* clic sur les chips Normal/Zen/Ladder/Practice/Autoplay */
                 if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-                    for (int mi = 0; mi < 4; mi++)
+                    for (int mi = 0; mi < 5; mi++)
                         if (CheckCollisionPointRec(mpNav, menu_mode_chip_rect(panelX2, sh, mi)))
                             gMenuMode = mi;
                 }
@@ -714,10 +714,11 @@ int main(int argc, char **argv) {
 
                 if (chosen >= 0 && chosen < menu.filteredCount) {
                     int idx = menu.filtered ? menu.filtered[chosen] : chosen;
-                    if      (gMenuMode == 1) go_mode_map(&play, menu.items[idx].path, MODE_ZEN,      &cdRemain, &screen, autoplay);
-                    else if (gMenuMode == 2) go_mode_map(&play, menu.items[idx].path, MODE_LADDER,   &cdRemain, &screen, autoplay);
-                    else if (gMenuMode == 3) go_mode_map(&play, menu.items[idx].path, MODE_PRACTICE, &cdRemain, &screen, autoplay);
-                    else                     go_play    (&play, menu.items[idx].path,                 &cdRemain, &screen, autoplay);
+                    bool ap = autoplay || (gMenuMode == 4);
+                    if      (gMenuMode == 1) go_mode_map(&play, menu.items[idx].path, MODE_ZEN,      &cdRemain, &screen, ap);
+                    else if (gMenuMode == 2) go_mode_map(&play, menu.items[idx].path, MODE_LADDER,   &cdRemain, &screen, ap);
+                    else if (gMenuMode == 3) go_mode_map(&play, menu.items[idx].path, MODE_PRACTICE, &cdRemain, &screen, ap);
+                    else                     go_play    (&play, menu.items[idx].path,                 &cdRemain, &screen, ap);
                 }
             }
 
@@ -1286,21 +1287,23 @@ int main(int argc, char **argv) {
             double cddt = dt > 0.05 ? 0.05 : dt;
             cdRemain -= cddt;
             play.nowMs = -(float)((cdRemain > 0 ? cdRemain : 0) * 1000.0);
-            play_cursor(&play, autoplay, sw, sh);
+            bool cdAp = autoplay || (gMenuMode == 4);
+            play_cursor(&play, cdAp, sw, sh);
 
             /* Rendu dans la render texture basse resolution si internalRes > 0,
              * sinon directement dans la fenetre.  La source RT a la hauteur NEGATIVE
              * dans DrawTexturePro pour corriger le flip Y des RenderTexture raylib. */
             { int rtw = gRtW > 0 ? gRtW : sw, rth = gRtH > 0 ? gRtH : sh;
               if (gRtW > 0) BeginTextureMode(gRenderTex); else BeginDrawing();
-              play_draw_scene(&play, cam, autoplay);
+              play_draw_scene(&play, cam, cdAp);
 
               int n = (int)ceilf((float)cdRemain);
               n = n < 1 ? 1 : (n > 3 ? 3 : n);
               const char *nt = TextFormat("%d", n);
               int fs = 160;
               DrawText(nt, rtw / 2 - MeasureText(nt, fs) / 2, rth / 2 - fs / 2, fs, RAYWHITE);
-              const char *ready = (gMode == MODE_LADDER)
+              const char *ready = cdAp && gMode == MODE_NORMAL ? "Autoplay"
+                  : (gMode == MODE_LADDER)
                   ? TextFormat("Speed Ladder  -  Level %d  -  %gx", gLadderLevel + 1, gRate)
                   : (gMode == MODE_AIM      ? "Aim Trainer"
                   : (gMode == MODE_PRACTICE ? TextFormat("Practice  -  %.2fx", gRate)
@@ -1415,7 +1418,8 @@ int main(int argc, char **argv) {
                 }
             }
 
-            play_update(&play, autoplay, dt, sw, sh);
+            bool ap = autoplay || (gMenuMode == 4);
+            play_update(&play, ap, dt, sw, sh);
 
             /* Speed Ladder : map reussie -> on accelere et on rejoue (jusqu'a la mort) */
             if (gMode == MODE_LADDER && play.finished && !play.gameOver) {
@@ -1429,9 +1433,9 @@ int main(int argc, char **argv) {
                 continue;
             }
 
-            /* enregistrement du meilleur score au 1er frame de fin (parties normales + aim) */
+            /* enregistrement du meilleur score au 1er frame de fin (parties normales + aim, hors autoplay) */
             if (play.finished && !play.gameOver && !play.scoreSaved && gCurrentMap[0] &&
-                (gMode == MODE_NORMAL || gMode == MODE_AIM)) {
+                (gMode == MODE_NORMAL || gMode == MODE_AIM) && !ap) {
                 play.scoreSaved = true;
                 gNewRecord = profile_update_best(gCurrentMap, play.score,
                                                   play.hits, play.hits + play.misses,
@@ -1448,8 +1452,8 @@ int main(int argc, char **argv) {
 
             { int rtw = gRtW > 0 ? gRtW : sw, rth = gRtH > 0 ? gRtH : sh;
               if (gRtW > 0) BeginTextureMode(gRenderTex); else BeginDrawing();
-              play_draw_scene(&play, cam, autoplay);
-              play_draw_hud(&play, rtw, rth, autoplay);
+              play_draw_scene(&play, cam, ap);
+              play_draw_hud(&play, rtw, rth, ap);
               if (gRtW > 0) {
                   EndTextureMode();
                   BeginDrawing(); ClearBackground(BLACK);
