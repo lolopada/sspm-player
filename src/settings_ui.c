@@ -317,7 +317,7 @@ void settings_update(int sw, int sh) {
                 if (nm[0] && !cursortex_set(nm)) { gSettings.cursorName[0] = '\0'; cursortex_set(""); }
             } break;
             case 6: gSettings.godMode = !gSettings.godMode; break;
-            case 7: gSettings.hitWindowMs = clampf(gSettings.hitWindowMs + step * 5.0f, 20.0f, 60.0f); break;
+            case 7: gSettings.hitWindowMs = clampf(gSettings.hitWindowMs + step * 5.0f, 20.0f, 100.0f); break;
             case 8: { int t2 = 360; gSettings.hueShift = ((gSettings.hueShift + step * 5) % t2 + t2) % t2; } break;
             case 9: {
                 /* sensibilite : Entree ouvre la saisie directe ; gauche/droite ignorees */
@@ -623,7 +623,7 @@ static void settings_hint(int g, const char **out, Color *col) {
                                    gCursorDir, gCursorCount);
             break;
         case 6:  *out = "(Yes = invincible, the health bar never drops)"; break;
-        case 7:  *out = "(ms before/after the plane: 20=strict  80=default  200=loose)"; break;
+        case 7:  *out = "(ms before/after the plane: 20=strict (default)  100=loose)"; break;
         case 8:  *out = "(hue rotation - 0=original, 180=complementary)"; break;
         case 9:  *out = "(type the exact value - 1.00=default  0.50=slow  2.00=fast  -  relative mouse)"; break;
         case 10: *out = "(No = instant rendering, recommended for tablet - may cause tearing)";

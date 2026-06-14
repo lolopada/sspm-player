@@ -699,12 +699,19 @@ void play_draw_scene(Play *p, Camera3D cam, bool autoplay) {
         if (p->state[i] == NOTE_HIT || p->state[i] == NOTE_MISS) continue;
         Vector3 pos = note_world(&p->map.notes[i], now);
         if (pos.z < -gApproachDist) break;        /* notes triees : suivantes plus loin */
-        if (pos.z >= 0.3f) continue;              /* disparue apres le plan, ne pas dessiner */
+
+        /* La note reste visible tant qu'elle est encore touchable (fenetre de hit
+           "en retard"), bornee pour ne pas foncer dans la camera. Sinon on a
+           l'impression d'un perfect hit alors que la note a deja disparu. */
+        float zLate = gApproachDist * gHitWindowMs / gApproachMs;
+        if (zLate < 0.30f) zLate = 0.30f;
+        if (zLate > 2.40f) zLate = 2.40f;
+        if (pos.z >= zLate) continue;             /* hors de la zone encore touchable */
 
         float az = pos.z < 0 ? -pos.z : 0.0f;
         float a = 1.0f, fadeStart = gApproachDist * (1.0f - FADE_FRAC);
         if (az > fadeStart) a = (gApproachDist - az) / (gApproachDist * FADE_FRAC);
-        if (pos.z > 0.0f) a = 1.0f - pos.z / 0.3f; /* fondu rapide apres le plan (z=0 -> z=0.3) */
+        if (pos.z > 0.0f) a = 1.0f - pos.z / zLate; /* fondu apres le plan, sur toute la fenetre de retard */
         a = clampf(a, 0.0f, 1.0f);
         /* Hidden : la note s'efface dans la derniere moitie avant le plan */
         if (gMods & MOD_HIDDEN) a *= clampf(az / (gApproachDist * 0.5f), 0.0f, 1.0f);

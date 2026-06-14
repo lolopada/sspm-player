@@ -533,7 +533,7 @@ void settings_load(Settings *s) {
         else if (strcmp(key, "cur_additive")  == 0) s->cursor.additive = (atoi(val) != 0);
         else if (strcmp(key, "music_volume")  == 0) s->musicVolume = clampf((float)atof(val), 0.0f, 1.0f);
         else if (strcmp(key, "godmode")       == 0) s->godMode = (atoi(val) != 0);
-        else if (strcmp(key, "hit_window")    == 0) s->hitWindowMs = clampf((float)atof(val), 20.0f, 60.0f);
+        else if (strcmp(key, "hit_window")    == 0) s->hitWindowMs = clampf((float)atof(val), 20.0f, 100.0f);
         else if (strcmp(key, "hue_shift")     == 0) { int hv = atoi(val); s->hueShift = ((hv % 360) + 360) % 360; }
         else if (strcmp(key, "sens")           == 0) s->sensMultiplier = clampf((float)atof(val), 0.01f, 20.0f);
         else if (strcmp(key, "vsync")          == 0) s->vsync = (atoi(val) != 0);
