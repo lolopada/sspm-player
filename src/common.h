@@ -47,8 +47,8 @@
 #define FADE_FRAC      0.15f
 
 /* --- gameplay --- */
-#define HIT_EARLY      80.0f
-#define HIT_LATE       80.0f
+#define HIT_EARLY      20.0f
+#define HIT_LATE       20.0f
 #define NOTE_HALF      (CUBE_SIZE * 0.5f)
 #define CURSOR_HALF    0.05f
 #define HIT_TOL        (NOTE_HALF + CURSOR_HALF)
