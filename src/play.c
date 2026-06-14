@@ -1302,6 +1302,6 @@ void aim_build(Play *p, const AimConfig *cfg) {
     /* parametres de jeu propres a l'aim (tous pilotes par la config du joueur) */
     gApproachMs  = clampf(cfg->approachMs, 150.0f, 1000.0f);
     gNoteScale   = clampf(cfg->size, 0.50f, 1.50f);
-    gHitWindowMs = clampf(cfg->hitWindowMs, 40.0f, 200.0f);
+    gHitWindowMs = clampf(cfg->hitWindowMs, 40.0f, 60.0f);
     gCullBehind  = gApproachDist * gHitWindowMs / gApproachMs + 2.0f;
 }

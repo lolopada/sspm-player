@@ -317,7 +317,7 @@ void settings_update(int sw, int sh) {
                 if (nm[0] && !cursortex_set(nm)) { gSettings.cursorName[0] = '\0'; cursortex_set(""); }
             } break;
             case 6: gSettings.godMode = !gSettings.godMode; break;
-            case 7: gSettings.hitWindowMs = clampf(gSettings.hitWindowMs + step * 5.0f, 20.0f, 200.0f); break;
+            case 7: gSettings.hitWindowMs = clampf(gSettings.hitWindowMs + step * 5.0f, 20.0f, 60.0f); break;
             case 8: { int t2 = 360; gSettings.hueShift = ((gSettings.hueShift + step * 5) % t2 + t2) % t2; } break;
             case 9: {
                 /* sensibilite : Entree ouvre la saisie directe ; gauche/droite ignorees */

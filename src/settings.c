@@ -463,7 +463,7 @@ void settings_defaults(Settings *s) {
     s->aim.segLen      = 10;
     s->aim.radius      = 0.90f;
     s->aim.size        = 1.0f;
-    s->aim.hitWindowMs = 120.0f;
+    s->aim.hitWindowMs = 60.0f;
     s->aim.durationSec = 90;
     s->aim.accelPct    = 0;
     s->keys.quit           = KEY_ESCAPE;
@@ -533,7 +533,7 @@ void settings_load(Settings *s) {
         else if (strcmp(key, "cur_additive")  == 0) s->cursor.additive = (atoi(val) != 0);
         else if (strcmp(key, "music_volume")  == 0) s->musicVolume = clampf((float)atof(val), 0.0f, 1.0f);
         else if (strcmp(key, "godmode")       == 0) s->godMode = (atoi(val) != 0);
-        else if (strcmp(key, "hit_window")    == 0) s->hitWindowMs = clampf((float)atof(val), 20.0f, 200.0f);
+        else if (strcmp(key, "hit_window")    == 0) s->hitWindowMs = clampf((float)atof(val), 20.0f, 60.0f);
         else if (strcmp(key, "hue_shift")     == 0) { int hv = atoi(val); s->hueShift = ((hv % 360) + 360) % 360; }
         else if (strcmp(key, "sens")           == 0) s->sensMultiplier = clampf((float)atof(val), 0.01f, 20.0f);
         else if (strcmp(key, "vsync")          == 0) s->vsync = (atoi(val) != 0);
@@ -569,7 +569,7 @@ void settings_load(Settings *s) {
         else if (strcmp(key, "aim_seg")        == 0) { int v = atoi(val); s->aim.segLen = v < 2 ? 2 : (v > 24 ? 24 : v); }
         else if (strcmp(key, "aim_radius")     == 0) s->aim.radius      = clampf((float)atof(val), 0.30f, 1.0f);
         else if (strcmp(key, "aim_size")       == 0) s->aim.size        = clampf((float)atof(val), 0.50f, 1.50f);
-        else if (strcmp(key, "aim_hit")        == 0) s->aim.hitWindowMs = clampf((float)atof(val), 40.0f, 200.0f);
+        else if (strcmp(key, "aim_hit")        == 0) s->aim.hitWindowMs = clampf((float)atof(val), 40.0f, 60.0f);
         else if (strcmp(key, "aim_duration")   == 0) { int v = atoi(val); s->aim.durationSec = v < 15 ? 15 : (v > 600 ? 600 : v); }
         else if (strcmp(key, "aim_accel")      == 0) { int v = atoi(val); s->aim.accelPct = v < 0 ? 0 : (v > 100 ? 100 : v); }
         else if (strcmp(key, "colors")        == 0) { int n = parse_hex_colors(val, s->customPal, MAX_PALETTE); if (n > 0) s->customLen = n; }

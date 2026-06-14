@@ -1223,7 +1223,7 @@ static void aim_row_step(int row, int step) {
         case 3: { int v = a->segLen + step;        a->segLen = v < 2 ? 2 : (v > 24 ? 24 : v); } break;
         case 4: a->radius      = clampf(a->radius      + step * 0.05f, 0.30f,  1.0f);   break;
         case 5: a->size        = clampf(a->size        + step * 0.05f, 0.50f,  1.50f);  break;
-        case 6: a->hitWindowMs = clampf(a->hitWindowMs + step * 5.0f,  40.0f,  200.0f); break;
+        case 6: a->hitWindowMs = clampf(a->hitWindowMs + step * 5.0f,  40.0f,  60.0f); break;
         case 7: { int v = a->durationSec + step * 15;  a->durationSec = v < 15 ? 15 : (v > 600 ? 600 : v); } break;
         case 8: { int v = a->accelPct + step * 10;     a->accelPct = v < 0 ? 0 : (v > 100 ? 100 : v); } break;
         default: break;
