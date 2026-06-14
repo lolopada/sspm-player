@@ -13,6 +13,7 @@ static bool mods_label(char *buf, size_t n) {
     if (gMods & MOD_MIRROR_X)   MODS_ADD("MH");
     if (gMods & MOD_MIRROR_Y)   MODS_ADD("MV");
     if (gMods & MOD_FLASHLIGHT) MODS_ADD("FL");
+    if (gMods & MOD_VANISH)    MODS_ADD("VN");
     if (gRate != 1.0f) { char r[16]; snprintf(r, sizeof r, "%gx", gRate); MODS_ADD(r); }
     #undef MODS_ADD
     return buf[0] != '\0';
@@ -703,6 +704,8 @@ void play_draw_scene(Play *p, Camera3D cam, bool autoplay) {
         a = clampf(a, 0.0f, 1.0f);
         /* Hidden : la note s'efface dans la derniere moitie avant le plan */
         if (gMods & MOD_HIDDEN) a *= clampf(az / (gApproachDist * 0.5f), 0.0f, 1.0f);
+        /* Vanish : la note disparait rapidement dans les 20% finaux avant le plan */
+        if (gMods & MOD_VANISH) a *= clampf(az / (gApproachDist * 0.20f), 0.0f, 1.0f);
 
         Color col = note_color(i);
         col.a = (unsigned char)(255.0f * a);

@@ -94,6 +94,7 @@ enum {
     MOD_MIRROR_X  = 1 << 4,
     MOD_MIRROR_Y  = 1 << 5,
     MOD_FLASHLIGHT= 1 << 6,
+    MOD_VANISH    = 1 << 7,
 };
 
 /* --- styles / patterns aim trainer --- */

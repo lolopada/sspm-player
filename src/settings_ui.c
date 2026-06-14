@@ -979,6 +979,7 @@ static const ModDef MOD_DEFS[] = {
     { MOD_MIRROR_X,   "Mirror H",    "Mirrors the note layout horizontally." },
     { MOD_MIRROR_Y,   "Mirror V",    "Mirrors the note layout vertically." },
     { MOD_FLASHLIGHT, "Flashlight",  "Only the area around the cursor is visible.  Score x1.12" },
+    { MOD_VANISH,     "Vanish",      "Notes fade out just before reaching the hit plane." },
 };
 #define N_MODS ((int)(sizeof(MOD_DEFS) / sizeof(MOD_DEFS[0])))
 static const float RATE_STEPS[] = {
