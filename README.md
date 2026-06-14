@@ -10,6 +10,8 @@
 [![License](https://img.shields.io/badge/license-GPL%20v3-3DA639?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/lolopada/sspm-player?style=for-the-badge&logo=github&color=f9c513)](https://github.com/lolopada/sspm-player/stargazers)
 
+[![Download maps](https://img.shields.io/badge/download_maps-sspm.paada.fr-FF5277?style=for-the-badge)](https://sspm.paada.fr)
+
 <img src="medias/gameplay.gif" alt="sspm-player gameplay" width="80%">
 
 <sub><a href="https://github.com/lolopada/sspm-player/raw/main/medias/gameplay.webm">Download the full-quality gameplay video</a></sub>
@@ -22,10 +24,14 @@
 
 > Runs on **Windows** &nbsp;and&nbsp; **Linux (Debian / Ubuntu)**
 
+> [!TIP]
+> **Need maps to play?** Browse and download `.sspm` maps from **[sspm.paada.fr](https://sspm.paada.fr)**, then drop them into your `maps/` folder.
+
 ## Table of contents
 
 - [Features](#features)
 - [Installation](#installation)
+- [Download maps](#download-maps)
 - [Usage](#usage)
 - [Controls](#controls)
 - [Options](#options)
@@ -98,6 +104,23 @@ sudo ldconfig
 ```
 
 </details>
+
+---
+
+## Download maps
+
+You need `.sspm` map files to play. The easiest way to get them is the companion site:
+
+### [sspm.paada.fr](https://sspm.paada.fr)
+
+Browse and download `.sspm` maps in one click.
+
+1. Open **[sspm.paada.fr](https://sspm.paada.fr)**.
+2. Download the maps you want (`.sspm` files).
+3. Drop them into the `maps/` folder next to the binary.
+4. Press **F5** in the menu (or relaunch) to see them.
+
+You can also drag & drop a `.sspm` file straight onto the window to play it right away.
 
 ---
 
@@ -181,7 +204,7 @@ All content lives in folders **next to the binary**. Subfolders are supported ev
 
 ### Maps, `maps/`
 
-Place `.sspm` files here. Any folder structure works:
+Place `.sspm` files here (get them from **[sspm.paada.fr](https://sspm.paada.fr)**). Any folder structure works:
 
 ```
 maps/
