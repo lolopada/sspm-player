@@ -26,11 +26,42 @@
 /*  Chargement asynchrone                                                */
 /* ===================================================================== */
 
+static int ci_eq(const char *a, const char *b) {
+    for (; *a && *b; a++, b++) {
+        unsigned char ca = (unsigned char)*a, cb = (unsigned char)*b;
+        if (ca >= 'A' && ca <= 'Z') ca += 32;
+        if (cb >= 'A' && cb <= 'Z') cb += 32;
+        if (ca != cb) return 0;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+static void song_name_from_path(const char *path, char *out, int outsz) {
+    const char *fname = GetFileName(path);
+    const char *sep = strstr(fname, " - ");
+    const char *start = fname;
+    if (sep) {
+        int plen = (int)(sep - fname);
+        if (plen > 0 && plen <= 16) {
+            char pre[17]; memcpy(pre, fname, (size_t)plen); pre[plen] = '\0';
+            char *end; float v = strtof(pre, &end);
+            if (end != pre && *end == '\0' && v >= 0.0f) start = sep + 3;
+        }
+    }
+    snprintf(out, (size_t)outsz, "%s", start);
+    char *dot = strrchr(out, '.');
+    if (dot && ci_eq(dot, ".sspm")) *dot = '\0';
+}
+
 /* Corps du chargement (thread-safe) : sspm_load + alloc state. */
 static void async_load_body(AsyncLoader *ld) {
     Play *p = ld->play;
     memset(p, 0, sizeof *p);
     if (!sspm_load(ld->path, &p->map)) { sspm_free(&p->map); ld->state = ALOAD_FAIL; return; }
+    if (!p->map.songName[0] || ci_eq(p->map.songName, "Artist name - Song name") ||
+        ci_eq(p->map.songName, "Artist name") || ci_eq(p->map.songName, "Song name") ||
+        ci_eq(p->map.songName, "Map name"))
+        song_name_from_path(ld->path, p->map.songName, sizeof p->map.songName);
     p->loaded = true;
     p->N = p->map.noteCountLoaded;
     p->state = (uint8_t *)calloc(p->N ? p->N : 1, 1);
