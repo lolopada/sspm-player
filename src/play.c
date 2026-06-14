@@ -606,8 +606,12 @@ void play_update(Play *p, bool autoplay, float dt, int sw, int sh) {
             if (p->state[i] != NOTE_PENDING) continue;
             if (dtms < -hitWin) {                    /* trop tard -> rate */
                 p->state[i] = NOTE_MISS; p->misses++; p->combo = 0; p->missFlash = 0.28f;
-                if (p->missTrackCount < MAX_MISS_TRACK)
-                    p->missTrack[p->missTrackCount++] = now;
+                if (p->missTrackCount < MAX_MISS_TRACK) {
+                    p->missTrack[p->missTrackCount].ms = now;
+                    p->missTrack[p->missTrackCount].x  = note_wx(&p->map.notes[i]);
+                    p->missTrack[p->missTrackCount].y  = note_wy(&p->map.notes[i]);
+                    p->missTrackCount++;
+                }
                 bool die = (sudden && !autoplay);
                 if (!gGodMode && !autoplay && !noFail) {
                     p->hp = clampf(p->hp - hpMiss, 0.0f, 1.0f);
@@ -825,6 +829,26 @@ void play_draw_scene(Play *p, Camera3D cam, bool autoplay) {
         /* zone sombre principale */
         DrawRing(fc, r, ro, 0.0f, 360.0f, 128, (Color){ 0, 0, 0, 215 });
     }
+}
+
+/* Rampe thermique pour la heatmap de miss : t in [0,1].
+ * transparent -> rouge sombre -> rouge -> orange -> jaune clair. */
+static Color heat_color(float t) {
+    t = clampf(t, 0.0f, 1.0f);
+    float r, g, b;
+    if (t < 0.5f) {                 /* rouge sombre -> rouge-orange */
+        float u = t / 0.5f;
+        r = 120.0f + u * 135.0f;    /* 120 -> 255 */
+        g = u * 75.0f;              /*   0 -> 75  */
+        b = 0.0f;
+    } else {                        /* orange -> jaune presque blanc */
+        float u = (t - 0.5f) / 0.5f;
+        r = 255.0f;
+        g = 75.0f + u * 180.0f;     /*  75 -> 255 */
+        b = u * 175.0f;             /*   0 -> 175 */
+    }
+    unsigned char a = (unsigned char)(36.0f + 200.0f * t);
+    return (Color){ (unsigned char)r, (unsigned char)g, (unsigned char)b, a };
 }
 
 /* Grade selon la precision (0..100). Renvoie la lettre et remplit *col. */
@@ -1104,90 +1128,190 @@ void play_draw_hud(Play *p, int sw, int sh, bool autoplay) {
                      vFS, svalCols[si]);
         }
 
-        /* --- Graphique miss timeline --- */
+        /* ============================================================
+         *  Analyse des miss : carte spatiale (OU) + timeline (QUAND)
+         * ============================================================ */
         int chartMgn = (int)(sw * 0.080f);
         int chartX   = chartMgn;
         int chartW2  = sw - 2 * chartMgn;
-        int chartY2  = statsY + statH + (int)(sh * 0.028f);
-        int chartH2  = (int)(sh * 0.108f); if (chartH2 < 38) chartH2 = 38;
-
-        DrawRectangle(chartX, chartY2, chartW2, chartH2, (Color){ 10, 12, 24, 225 });
-        DrawRectangleLinesEx(
-            (Rectangle){ (float)chartX, (float)chartY2, (float)chartW2, (float)chartH2 },
-            1.0f, (Color){ 38, 50, 88, 205 });
-        DrawText("MISS TIMELINE", chartX, chartY2 - 19, 13,
-                 (Color){ 88, 110, 175, 195 });
+        int chartY2  = statsY + statH + (int)(sh * 0.046f);
+        int chartH2  = (int)(sh * 0.170f); if (chartH2 < 96) chartH2 = 96;
 
         float durMs  = (float)(p->map.lastMs > 0 ? p->map.lastMs : 1);
         float durSec = durMs / 1000.0f;
 
-        /* Graduations temporelles */
-        float tickIv = durSec <= 60.0f ? 10.0f : durSec <= 180.0f ? 30.0f : 60.0f;
-        for (float ts = tickIv; ts < durSec - tickIv * 0.1f; ts += tickIv) {
-            int tx = chartX + (int)(ts / durSec * (float)chartW2);
-            DrawLine(tx, chartY2, tx, chartY2 + chartH2, (Color){ 38, 50, 82, 130 });
-            char tbuf[16]; snprintf(tbuf, sizeof tbuf, "%ds", (int)ts);
-            DrawText(tbuf, tx - MeasureText(tbuf, 10)/2, chartY2 + chartH2 + 2, 10,
-                     (Color){ 68, 88, 140, 170 });
+        /* Decoupe horizontale : panneau carre (heatmap) a gauche, timeline a droite */
+        int mapSize = chartH2;                       /* carre */
+        int gapPan  = (int)(sw * 0.022f); if (gapPan < 12) gapPan = 12;
+        int mapX = chartX, mapY = chartY2;
+        int tlX  = mapX + mapSize + gapPan;
+        int tlY  = chartY2;
+        int tlW  = chartX + chartW2 - tlX;
+        int tlH  = chartH2;
+
+        /* ---- Panneau 1 : MISS MAP (ou les miss tombent sur la grille) ---- */
+        DrawText("MISS MAP", mapX, mapY - 19, 13, (Color){ 88, 110, 175, 195 });
+        DrawRectangle(mapX, mapY, mapSize, mapSize, (Color){ 8, 9, 20, 235 });
+        {
+            const float HALF = 1.6f;                 /* fenetre monde affichee (grille = +-1.5) */
+            #define W2SX(wx) (mapX + (int)(((wx) + HALF) / (2.0f*HALF) * (float)mapSize))
+            #define W2SY(wy) (mapY + (int)((HALF - (wy)) / (2.0f*HALF) * (float)mapSize))
+            #define HN 40
+            static float hb[HN*HN], tmp[HN*HN], sm2[HN*HN];
+            static const float K[7] = { 0.06f, 0.12f, 0.20f, 0.24f, 0.20f, 0.12f, 0.06f };
+            int mi, x, y, k;
+
+            /* binning des miss en coords monde -> grille HNxHN */
+            memset(hb, 0, sizeof hb);
+            for (mi = 0; mi < p->missTrackCount; mi++) {
+                int gx = (int)((p->missTrack[mi].x + HALF) / (2.0f*HALF) * HN);
+                int gy = (int)((HALF - p->missTrack[mi].y) / (2.0f*HALF) * HN);
+                if (gx < 0) gx = 0;
+                if (gx >= HN) gx = HN-1;
+                if (gy < 0) gy = 0;
+                if (gy >= HN) gy = HN-1;
+                hb[gy*HN + gx] += 1.0f;
+            }
+            /* lissage gaussien separable (rayon 3) */
+            for (y = 0; y < HN; y++)
+                for (x = 0; x < HN; x++) {
+                    float s = 0.0f;
+                    for (k = -3; k <= 3; k++) {
+                        int xx = x + k; if (xx < 0) xx = 0; if (xx >= HN) xx = HN-1;
+                        s += hb[y*HN + xx] * K[k+3];
+                    }
+                    tmp[y*HN + x] = s;
+                }
+            for (y = 0; y < HN; y++)
+                for (x = 0; x < HN; x++) {
+                    float s = 0.0f;
+                    for (k = -3; k <= 3; k++) {
+                        int yy = y + k; if (yy < 0) yy = 0; if (yy >= HN) yy = HN-1;
+                        s += tmp[yy*HN + x] * K[k+3];
+                    }
+                    sm2[y*HN + x] = s;
+                }
+            float mxv = 0.0001f;
+            for (k = 0; k < HN*HN; k++) if (sm2[k] > mxv) mxv = sm2[k];
+
+            /* cellules thermiques */
+            float cw = (float)mapSize / (float)HN;
+            for (y = 0; y < HN; y++)
+                for (x = 0; x < HN; x++) {
+                    float t = sm2[y*HN + x] / mxv;
+                    if (t < 0.02f) continue;
+                    DrawRectangle(mapX + (int)((float)x*cw), mapY + (int)((float)y*cw),
+                                  (int)cw + 1, (int)cw + 1, heat_color(t));
+                }
+
+            /* grille 3x3 (lignes a +-0.5 et +-1.5) */
+            { float ln[4] = { -1.5f, -0.5f, 0.5f, 1.5f };
+              Color glc = (Color){ 70, 86, 130, 110 };
+              for (k = 0; k < 4; k++) {
+                  int sx = W2SX(ln[k]), sy = W2SY(ln[k]);
+                  DrawLine(sx, mapY, sx, mapY + mapSize, glc);
+                  DrawLine(mapX, sy, mapX + mapSize, sy, glc);
+              } }
+            /* bordure de l'aire jouable (+-1.5) accentuee */
+            { int bx0 = W2SX(-1.5f), by0 = W2SY(1.5f), bx1 = W2SX(1.5f), by1 = W2SY(-1.5f);
+              DrawRectangleLinesEx((Rectangle){ (float)bx0, (float)by0,
+                  (float)(bx1-bx0), (float)(by1-by0) }, 1.0f, (Color){ 110, 130, 185, 150 }); }
+            /* points exacts par-dessus (precision) */
+            for (mi = 0; mi < p->missTrackCount; mi++)
+                DrawCircle(W2SX(p->missTrack[mi].x), W2SY(p->missTrack[mi].y),
+                           1.6f, (Color){ 255, 235, 210, 150 });
+
+            DrawRectangleLinesEx((Rectangle){ (float)mapX, (float)mapY,
+                (float)mapSize, (float)mapSize }, 1.0f, (Color){ 38, 50, 88, 205 });
+            if (p->missTrackCount == 0) {
+                const char *nm = "Perfect";
+                DrawText(nm, mapX + mapSize/2 - MeasureText(nm, 13)/2,
+                         mapY + mapSize/2 - 7, 13, (Color){ 95, 235, 130, 200 });
+            }
+            #undef W2SX
+            #undef W2SY
+            #undef HN
         }
 
-        /* Densité de miss : 160 bins, lissage gaussien fenetre ±5 */
+        /* ---- Panneau 2 : MISS TIMELINE (quand les miss arrivent) ---- */
+        DrawText("MISS TIMELINE", tlX, tlY - 19, 13, (Color){ 88, 110, 175, 195 });
+        DrawRectangle(tlX, tlY, tlW, tlH, (Color){ 10, 12, 24, 225 });
+
+        /* graduations temporelles */
+        { float tickIv = durSec <= 60.0f ? 10.0f : durSec <= 180.0f ? 30.0f : 60.0f;
+          for (float ts = tickIv; ts < durSec - tickIv * 0.1f; ts += tickIv) {
+              int tx = tlX + (int)(ts / durSec * (float)tlW);
+              DrawLine(tx, tlY, tx, tlY + tlH, (Color){ 38, 50, 82, 120 });
+              char tbuf[16]; snprintf(tbuf, sizeof tbuf, "%ds", (int)ts);
+              DrawText(tbuf, tx - MeasureText(tbuf, 10)/2, tlY + tlH + 3, 10,
+                       (Color){ 68, 88, 140, 170 });
+          } }
+
+        /* densite de miss : aire remplie + courbe lissee */
         {
-            float bins[160]; memset(bins, 0, sizeof bins);
-            int mi;
+            #define TN 200
+            static float bins[TN], sm[TN];
+            int mi, b;
+            memset(bins, 0, sizeof bins);
             for (mi = 0; mi < p->missTrackCount; mi++) {
-                int b = (int)(p->missTrack[mi] / durMs * 160.0f);
-                if (b < 0) b = 0;
-                if (b > 159) b = 159;
-                bins[b] += 1.0f;
+                int bb = (int)(p->missTrack[mi].ms / durMs * TN);
+                if (bb < 0) bb = 0;
+                if (bb >= TN) bb = TN-1;
+                bins[bb] += 1.0f;
             }
-            float sm[160]; int b;
-            for (b = 0; b < 160; b++) {
+            for (b = 0; b < TN; b++) {
                 float s = 0.0f; int cnt = 0, d;
-                for (d = -5; d <= 5; d++) {
+                for (d = -6; d <= 6; d++) {
                     int nb = b + d;
-                    if (nb >= 0 && nb < 160) { s += bins[nb]; cnt++; }
+                    if (nb >= 0 && nb < TN) { s += bins[nb]; cnt++; }
                 }
                 sm[b] = cnt > 0 ? s / (float)cnt : 0.0f;
             }
-            float mxv = 0.001f;
-            for (b = 0; b < 160; b++) if (sm[b] > mxv) mxv = sm[b];
+            float mxv = 0.0001f; int peak = 0;
+            for (b = 0; b < TN; b++) if (sm[b] > mxv) { mxv = sm[b]; peak = b; }
 
-            float bwf = (float)chartW2 / 160.0f;
-            for (b = 0; b < 160; b++) {
-                float t  = sm[b] / mxv;
-                int   bh = (int)(t * (float)(chartH2 - 2));
+            float bwf = (float)tlW / (float)TN;
+            int base = tlY + tlH - 1;
+            for (b = 0; b < TN; b++) {
+                float t = sm[b] / mxv;
+                int bh = (int)(t * (float)(tlH - 3));
                 if (bh <= 0) continue;
-                int bx2 = chartX + (int)((float)b * bwf);
-                int bw2 = (int)bwf + 1;
-                DrawRectangle(bx2, chartY2 + chartH2 - bh, bw2, bh,
-                              (Color){ 210, 48, 68, (unsigned char)(52 + (int)(t * 148.0f)) });
+                DrawRectangle(tlX + (int)((float)b * bwf), base - bh, (int)bwf + 1, bh,
+                              (Color){ 200, 46, 64, (unsigned char)(40 + (int)(t * 120.0f)) });
             }
-            /* Ligne de courbe */
-            for (b = 0; b < 159; b++) {
-                float t0 = sm[b]   / mxv, t1 = sm[b+1] / mxv;
-                float x0 = (float)chartX + ((float)b   + 0.5f) * bwf;
-                float x1 = (float)chartX + ((float)b+1 + 0.5f) * bwf;
-                float y0 = (float)(chartY2 + chartH2) - t0 * (float)(chartH2 - 2);
-                float y1 = (float)(chartY2 + chartH2) - t1 * (float)(chartH2 - 2);
+            for (b = 0; b < TN-1; b++) {
+                float t0 = sm[b]/mxv, t1 = sm[b+1]/mxv;
+                float x0 = (float)tlX + ((float)b   + 0.5f) * bwf;
+                float x1 = (float)tlX + ((float)b+1 + 0.5f) * bwf;
+                float y0 = (float)base - t0 * (float)(tlH - 3);
+                float y1 = (float)base - t1 * (float)(tlH - 3);
                 DrawLineEx((Vector2){ x0, y0 }, (Vector2){ x1, y1 }, 2.0f,
                            (Color){ 255, 92, 112, 235 });
             }
-
+            /* marqueur du pic (pire moment) */
+            if (p->missTrackCount > 0) {
+                int px = tlX + (int)(((float)peak + 0.5f) * bwf);
+                int py = base - (tlH - 3);
+                DrawCircleLines(px, py, 4.0f, (Color){ 255, 210, 120, 235 });
+                DrawCircle(px, py, 2.0f, (Color){ 255, 210, 120, 235 });
+            }
             if (p->missTrackCount == 0) {
                 const char *nm = "No misses !";
-                DrawText(nm, chartX + chartW2/2 - MeasureText(nm, 14)/2,
-                         chartY2 + chartH2/2 - 7, 14, (Color){ 95, 235, 130, 215 });
+                DrawText(nm, tlX + tlW/2 - MeasureText(nm, 14)/2,
+                         tlY + tlH/2 - 7, 14, (Color){ 95, 235, 130, 215 });
             }
+            #undef TN
         }
 
-        /* Marqueur game over (position de la mort) */
+        /* marqueur game over (position de la mort dans la timeline) */
         if (p->gameOver && p->map.lastMs > 0) {
             float pct = clampf(p->nowMs / durMs, 0.0f, 1.0f);
-            int mx = chartX + (int)(pct * (float)chartW2);
-            DrawLine(mx, chartY2, mx, chartY2 + chartH2, (Color){ 255, 80, 80, 220 });
-            DrawCircle(mx, chartY2, 5, (Color){ 255, 80, 80, 230 });
+            int mx = tlX + (int)(pct * (float)tlW);
+            DrawLine(mx, tlY, mx, tlY + tlH, (Color){ 255, 80, 80, 220 });
+            DrawCircle(mx, tlY, 5, (Color){ 255, 80, 80, 230 });
         }
+        DrawRectangleLinesEx((Rectangle){ (float)tlX, (float)tlY,
+            (float)tlW, (float)tlH }, 1.0f, (Color){ 38, 50, 88, 205 });
 
         /* Hint */
         int hintY = chartY2 + chartH2 + (int)(sh * 0.026f);

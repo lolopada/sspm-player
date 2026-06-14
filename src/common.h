@@ -108,6 +108,8 @@ enum { P_PINGH = 0, P_PINGV, P_CIRCLE, P_STAR, P_ZIG, P_SQUARE, P_DIAG, P_BURST,
 
 /* --- historique de miss pour le graphique fin de partie --- */
 #define MAX_MISS_TRACK 2048
+/* un miss enregistre : instant (ms) + position monde de la note ratee (x,y) */
+typedef struct { float ms, x, y; } MissPt;
 
 /* --- calibration --- */
 #define CALIB_MAX     64
@@ -367,7 +369,7 @@ typedef struct {
     float   cx, cy;
     int     score, hits, misses, combo, maxCombo;
     float   missFlash;
-    float   missTrack[MAX_MISS_TRACK];
+    MissPt  missTrack[MAX_MISS_TRACK];
     int     missTrackCount;
     float   hp;
     bool    scoreSaved;
