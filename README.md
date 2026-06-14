@@ -10,9 +10,9 @@
 [![License](https://img.shields.io/badge/license-GPL%20v3-3DA639?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/lolopada/sspm-player?style=for-the-badge&logo=github&color=f9c513)](https://github.com/lolopada/sspm-player/stargazers)
 
-<video src="https://github.com/lolopada/sspm-player/raw/main/medias/gameplay.webm" poster="https://github.com/lolopada/sspm-player/raw/main/medias/menu.png" autoplay loop muted playsinline width="80%"></video>
+<img src="medias/gameplay.gif" alt="sspm-player gameplay" width="80%">
 
-<sub>▶️ Video not playing? <a href="medias/gameplay.webm">Download the gameplay clip</a></sub>
+<sub>🎬 <a href="https://github.com/lolopada/sspm-player/raw/main/medias/gameplay.webm">Download the full-quality gameplay video</a></sub>
 
 </div>
 
