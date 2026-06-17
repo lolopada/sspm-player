@@ -572,6 +572,10 @@ static float         sSpecBands[SPEC_BANDS];    /* magnitudes lissees, thread pr
 static float         sSpecRe[SPEC_N];
 static float         sSpecIm[SPEC_N];
 static bool          sSpecAttached = false;
+/* Le tap audio est PARTAGE : le fond SPECTRUM et le beat punch (postfx) peuvent le
+ * reclamer independamment. On l'attache tant qu'au moins un des deux le veut. */
+static bool          sSpecWant  = false;   /* fond SPECTRUM actif */
+static bool          sPunchWant = false;   /* beat punch actif */
 
 static void bg_audio_tap(void *buf, unsigned int frames) {
     const float *f = (const float *)buf; /* float stereo interleave */
@@ -582,11 +586,55 @@ static void bg_audio_tap(void *buf, unsigned int frames) {
     }
 }
 
-static void bg_spectrum_init(void) {
-    if (!sSpecAttached) {
+/* (Dé)attache le tap audio selon les deux demandeurs. Idempotent : ne fait un appel
+ * Attach/Detach que sur changement d'etat reel. */
+static void bg_audio_tap_sync(void) {
+    bool want = sSpecWant || sPunchWant;
+    if (want && !sSpecAttached) {
         AttachAudioMixedProcessor(bg_audio_tap);
         sSpecAttached = true;
+    } else if (!want && sSpecAttached) {
+        DetachAudioMixedProcessor(bg_audio_tap);
+        sSpecAttached = false;
     }
+}
+
+/* FFT radix-2 iterative (DIT) en place sur (re, im) de taille SPEC_N.
+ * Partagee par l'analyse du spectre (fond) et du grave (beat punch). */
+static void bg_fft(float *re, float *im) {
+    for (int i = 1, j = 0; i < SPEC_N; i++) {
+        int bit = SPEC_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            float t = re[i]; re[i] = re[j]; re[j] = t;
+            t = im[i]; im[i] = im[j]; im[j] = t;
+        }
+    }
+    for (int len = 2; len <= SPEC_N; len <<= 1) {
+        float ang = -2.0f * 3.14159265f / (float)len;
+        float wRe = cosf(ang), wIm = sinf(ang);
+        for (int i = 0; i < SPEC_N; i += len) {
+            float cRe = 1.0f, cIm = 0.0f;
+            for (int j2 = 0; j2 < len / 2; j2++) {
+                float uRe = re[i + j2], uIm = im[i + j2];
+                float tRe = cRe * re[i + j2 + len/2] - cIm * im[i + j2 + len/2];
+                float tIm = cRe * im[i + j2 + len/2] + cIm * re[i + j2 + len/2];
+                re[i + j2]           = uRe + tRe;
+                im[i + j2]           = uIm + tIm;
+                re[i + j2 + len / 2] = uRe - tRe;
+                im[i + j2 + len / 2] = uIm - tIm;
+                float nRe = cRe * wRe - cIm * wIm;
+                cIm = cRe * wIm + cIm * wRe;
+                cRe = nRe;
+            }
+        }
+    }
+}
+
+static void bg_spectrum_init(void) {
+    sSpecWant = true;
+    bg_audio_tap_sync();
     for (int i = 0; i < SPEC_BANDS; i++) sSpecBands[i] = 0.0f;
 }
 
@@ -599,35 +647,7 @@ static void bg_spectrum_update(float dt) {
         sSpecIm[i] = 0.0f;
     }
 
-    /* FFT radix-2 iteratif (DIT) */
-    for (int i = 1, j = 0; i < SPEC_N; i++) {
-        int bit = SPEC_N >> 1;
-        for (; j & bit; bit >>= 1) j ^= bit;
-        j ^= bit;
-        if (i < j) {
-            float t = sSpecRe[i]; sSpecRe[i] = sSpecRe[j]; sSpecRe[j] = t;
-            t = sSpecIm[i]; sSpecIm[i] = sSpecIm[j]; sSpecIm[j] = t;
-        }
-    }
-    for (int len = 2; len <= SPEC_N; len <<= 1) {
-        float ang  = -2.0f * 3.14159265f / (float)len;
-        float wRe  = cosf(ang), wIm = sinf(ang);
-        for (int i = 0; i < SPEC_N; i += len) {
-            float cRe = 1.0f, cIm = 0.0f;
-            for (int j2 = 0; j2 < len / 2; j2++) {
-                float uRe = sSpecRe[i + j2],       uIm = sSpecIm[i + j2];
-                float tRe = cRe * sSpecRe[i + j2 + len/2] - cIm * sSpecIm[i + j2 + len/2];
-                float tIm = cRe * sSpecIm[i + j2 + len/2] + cIm * sSpecRe[i + j2 + len/2];
-                sSpecRe[i + j2]           = uRe + tRe;
-                sSpecIm[i + j2]           = uIm + tIm;
-                sSpecRe[i + j2 + len / 2] = uRe - tRe;
-                sSpecIm[i + j2 + len / 2] = uIm - tIm;
-                float nRe = cRe * wRe - cIm * wIm;
-                cIm = cRe * wIm + cIm * wRe;
-                cRe = nRe;
-            }
-        }
-    }
+    bg_fft(sSpecRe, sSpecIm);
 
     /* Mapping log-frequence -> bandes + lissage */
     for (int b = 0; b < SPEC_BANDS; b++) {
@@ -647,6 +667,67 @@ static void bg_spectrum_update(float dt) {
         else                     sSpecBands[b] -= dt * SPEC_DECAY * sSpecBands[b];
     }
 }
+
+/* =========================================================================
+ * Beat punch — enveloppe d'energie grave (kick / downbeat) extraite par FFT.
+ * Reutilise le tap audio + la FFT du spectre, mais reste disponible quel que
+ * soit le fond choisi (active a la demande par le postfx). Sortie : sPunchEnv,
+ * une enveloppe 0..1 qui spike sur les coups de grave puis retombe.
+ * ========================================================================= */
+/* Bande de grave : bin 1 ~= 86 Hz (44.1 kHz / 512) -> on capte le fondamental du
+ * kick. Demarrer plus haut raterait le coup de grave. PUNCH_HI exclu. */
+#define PUNCH_LO 1      /* premier bin FFT (saute le DC) — contient le kick */
+#define PUNCH_HI 6      /* dernier bin exclu (~430 Hz : kick + basse) */
+
+static float sPunchRe[SPEC_N];   /* scratch FFT propre (n'ecrase pas le spectre) */
+static float sPunchIm[SPEC_N];
+static float sPunchAvg = 0.0f;   /* suiveur lent du grave : plancher de reference */
+static float sPunchEnv = 0.0f;   /* enveloppe de sortie (attaque rapide, relache amorti) */
+
+void bg_punch_set_active(bool on) {
+    if (on == sPunchWant) return;
+    sPunchWant = on;
+    if (!on) { sPunchEnv = 0.0f; sPunchAvg = 0.0f; }
+    bg_audio_tap_sync();
+}
+
+void bg_punch_update(float dt) {
+    if (!sPunchWant) { sPunchEnv = 0.0f; return; }
+    /* Fenetre de Hann sur les derniers echantillons captures (memes que le spectre). */
+    for (int i = 0; i < SPEC_N; i++) {
+        int src = (sSpecWriteIdx % SPEC_N + i) % SPEC_N;
+        float h = 0.5f * (1.0f - cosf(2.0f * 3.14159265f * i / (SPEC_N - 1)));
+        sPunchRe[i] = sSpecRaw[src] * h;
+        sPunchIm[i] = 0.0f;
+    }
+    bg_fft(sPunchRe, sPunchIm);
+    /* Energie grave = magnitude moyenne des bins bas (meme normalisation que le spectre). */
+    float bass = 0.0f;
+    for (int k = PUNCH_LO; k < PUNCH_HI; k++) {
+        float re = sPunchRe[k], im = sPunchIm[k];
+        bass += sqrtf(re * re + im * im) / (SPEC_N * 0.5f);
+    }
+    bass /= (float)(PUNCH_HI - PUNCH_LO);
+
+    /* Suiveur lent = niveau grave recent (reference pour detecter un depassement). */
+    float follow = dt * 2.5f; if (follow > 1.0f) follow = 1.0f;
+    sPunchAvg += (bass - sPunchAvg) * follow;
+
+    /* Onset : le grave instantane depasse-t-il nettement sa moyenne recente ?
+     * sensibilite (gBeatPunchSens) abaisse le seuil de declenchement et amplifie. */
+    float sens   = clampf(gBeatPunchSens, 0.5f, 2.5f);
+    float ratio  = bass / (sPunchAvg + 1e-4f);     /* ~1 au repos, >1 sur un kick */
+    float trig   = 1.0f + 0.22f / sens;            /* seuil de declenchement */
+    float target = 0.0f;
+    if (bass > 0.0025f && ratio > trig)            /* porte anti-bruit en quasi-silence */
+        target = clampf((ratio - trig) * 1.4f * sens, 0.0f, 1.0f);
+
+    /* Attaque instantanee, relachement amorti -> "punch" net qui suit le beat. */
+    if (target > sPunchEnv) sPunchEnv = target;
+    else { sPunchEnv -= dt * 5.0f; if (sPunchEnv < 0.0f) sPunchEnv = 0.0f; }
+}
+
+float bg_punch_level(void) { return sPunchEnv; }
 
 static void bg_spectrum_draw(int sw, int sh, float intensity) {
     ClearBackground(SBG_BASE);
@@ -955,11 +1036,9 @@ void bg_on_beat(bool isDownbeat) {
 }
 
 void bg_init(BgStyle style, int sw, int sh) {
-    /* Detach audio tap si on quitte SPECTRUM */
-    if (sSpecAttached && style != BG_SPECTRUM) {
-        DetachAudioMixedProcessor(bg_audio_tap);
-        sSpecAttached = false;
-    }
+    /* Le fond ne reclame le tap que pour SPECTRUM ; le beat punch (sPunchWant) peut
+     * le garder attache independamment (gere par bg_audio_tap_sync). */
+    if (style != BG_SPECTRUM) { sSpecWant = false; bg_audio_tap_sync(); }
     if (sCircuitReady) { UnloadRenderTexture(sCircuitTex);  sCircuitReady = false; }
     if (sRadarReady)   { UnloadRenderTexture(sRadarRT);     sRadarReady   = false; }
     if (sVeilReady)    { UnloadTexture(sVeilTex);           sVeilReady    = false; }
@@ -984,7 +1063,7 @@ void bg_init(BgStyle style, int sw, int sh) {
 }
 
 void bg_unload_all(void) {
-    if (sSpecAttached) { DetachAudioMixedProcessor(bg_audio_tap); sSpecAttached = false; }
+    sSpecWant = false; sPunchWant = false; bg_audio_tap_sync();
     if (sCircuitReady) { UnloadRenderTexture(sCircuitTex);  sCircuitReady = false; }
     if (sRadarReady)   { UnloadRenderTexture(sRadarRT);     sRadarReady   = false; }
     if (sVeilReady)    { UnloadTexture(sVeilTex);           sVeilReady    = false; }
@@ -1022,6 +1101,8 @@ void bg_update(BgStyle style, float dt) {
     if (style == BG_FLOWLIVE) bg_flowlive_update(dt);
     if (style == BG_RADAR)    bg_radar_update(dt);
     if (style == BG_GLITCH)   bg_glitch_update(dt);
+    /* Beat punch : analyse du grave (auto-gardee : ne tourne que si reclamee). */
+    bg_punch_update(dt);
     /* Decroissance de l'impulsion globale (VEIL, RADAR, GLITCH) */
     sGlobalBeatPulse -= dt * 4.0f;
     if (sGlobalBeatPulse < 0.0f) sGlobalBeatPulse = 0.0f;

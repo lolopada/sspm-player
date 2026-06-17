@@ -948,13 +948,14 @@ void menu_draw(Menu *m, int sw, int sh) {
         const char *crumb = sfn->path[0] ? sfn->path : "Unsorted";
         DrawText(TextFormat("Folders > %s", crumb),
                  panelX + 8, 59, 11, (Color){ 100, 120, 180, 200 });
-    } else if (m->diffFilter >= 0 || m->favsOnly || m->newOnly || !m->hideBlacklisted) {
-        char fhint[100] = ""; int fho = 0;
+    } else if (m->diffFilter >= 0 || m->favsOnly || m->newOnly || !m->hideBlacklisted || m->sortMode == 4) {
+        char fhint[120] = ""; int fho = 0;
         if (m->favsOnly)           fho += snprintf(fhint+fho, (int)sizeof fhint-fho, "[FAV] ");
         if (m->newOnly)            fho += snprintf(fhint+fho, (int)sizeof fhint-fho, "[NEW] ");
         if (!m->hideBlacklisted)   fho += snprintf(fhint+fho, (int)sizeof fhint-fho, "[SHOW BANNED] ");
-        if (m->diffFilter >= 0)    snprintf(fhint+fho, (int)sizeof fhint-fho, "[%s]",
+        if (m->diffFilter >= 0)    fho += snprintf(fhint+fho, (int)sizeof fhint-fho, "[%s] ",
                                             sspm_difficulty_name((uint8_t)m->diffFilter));
+        if (m->sortMode == 4)      fho += snprintf(fhint+fho, (int)sizeof fhint-fho, "[* Star Rate sort - R]");
         DrawText(fhint, panelX + 8, 59, 12, (Color){ 255, 200, 55, 255 });
     }
 
@@ -1163,13 +1164,13 @@ void menu_draw(Menu *m, int sw, int sh) {
 
     /* Hints clavier (bas gauche) */
     if (m->viewTab == 1 && m->collSel >= 0)
-        DrawText("F: fav  |  X: ban  |  V: favorites  |  H: show banned  |  D: difficulty  |  R: star rate  |  Tab: sort  |  F5: refresh  |  S: options  |  Esc: folders",
+        DrawText("F: fav  |  X: ban  |  V: favorites  |  H: show banned  |  D: difficulty  |  R: star sort  |  Tab: sort  |  F5: refresh  |  S: options  |  Esc: folders",
                  38, sh - 18, 11, (Color){ 68, 70, 100, 255 });
     else if (m->viewTab == 1)
         DrawText("Up/Down: navigate  |  Enter: open  |  F5: refresh  |  S: options  |  Esc: quit",
                  38, sh - 18, 11, (Color){ 68, 70, 100, 255 });
     else
-        DrawText("F: fav  |  X: ban  |  V: favorites  |  H: show banned  |  N: never played  |  D: difficulty  |  R: star rate  |  Tab: sort  |  F5: refresh  |  S: options  |  Esc: quit",
+        DrawText("F: fav  |  X: ban  |  V: favorites  |  H: show banned  |  N: never played  |  D: difficulty  |  R: star sort  |  Tab: sort  |  F5: refresh  |  S: options  |  Esc: quit",
                  38, sh - 18, 11, (Color){ 68, 70, 100, 255 });
 }
 

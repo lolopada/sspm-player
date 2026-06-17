@@ -37,8 +37,8 @@ else
   RM       = rm -f
 endif
 
-$(BIN): src/main.c src/globals.c src/settings.c src/settings_ui.c src/play.c src/menu.c src/calib.c src/profile_ui.c src/sspm.c src/filepicker.c src/bg.c src/miniz.o $(HDR)
-	$(CC) $(CFLAGS) -o $@ src/main.c src/globals.c src/settings.c src/settings_ui.c src/play.c src/menu.c src/calib.c src/profile_ui.c src/sspm.c src/filepicker.c src/bg.c src/miniz.o $(LDLIBS)
+$(BIN): src/main.c src/globals.c src/settings.c src/settings_ui.c src/play.c src/menu.c src/calib.c src/profile_ui.c src/sspm.c src/filepicker.c src/bg.c src/postfx.c src/miniz.o $(HDR)
+	$(CC) $(CFLAGS) -o $@ src/main.c src/globals.c src/settings.c src/settings_ui.c src/play.c src/menu.c src/calib.c src/profile_ui.c src/sspm.c src/filepicker.c src/bg.c src/postfx.c src/miniz.o $(LDLIBS)
 
 src/miniz.o: src/miniz.c src/miniz.h
 	$(CC) $(CFLAGS) -Wno-type-limits -c src/miniz.c -o src/miniz.o

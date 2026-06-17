@@ -117,7 +117,7 @@ typedef struct { float ms, x, y; } MissPt;
 #define CALIB_PERIOD  0.5
 
 /* --- options UI --- */
-#define N_TABS        7
+#define N_TABS        8
 #define MAX_OPT_ROWS  28
 
 /* =========================================================================
@@ -336,6 +336,27 @@ typedef struct {
     char  mapsDir[512];         /* dossier de maps ; vide = "maps/" par défaut */
     BgStyle bgStyle;            /* BG_NONE / BG_VOID / BG_CIRCUIT / BG_PULSE / BG_AURORA */
     float   bgIntensity;        /* 0.0 (invisible) .. 1.0 (plein), defaut 0.5 */
+    bool    bloomOn;            /* bloom / glow en post-processing (off par defaut) */
+    float   bloomIntensity;     /* multiplicateur du halo (0..3), defaut 1.0 */
+    float   bloomThreshold;     /* seuil de luminosite (0..1), defaut 0.7 */
+    float   bloomRadius;        /* etalement du halo (0.5..3.0), defaut 1.0 */
+    int     bloomQuality;       /* resolution du bloom : 0=1/2, 1=1/4, 2=1/8 ; defaut 1 */
+    int     bloomTintHue;       /* teinte du halo en degres (0..345, pas de 15) ; -1 = neutre (blanc) */
+    bool    bloomScreen;        /* composite : false=additif (defaut), true=screen (plus doux) */
+    bool    bloomInMenu;        /* applique aussi les shaders aux ecrans de menu (off par defaut) */
+    bool    shadersOn;          /* interrupteur MAITRE de tous les shaders (off par defaut, cout nul) */
+    bool    streakOn;           /* anamorphic streaks : trainees lumineuses horizontales (off par defaut) */
+    float   streakIntensity;    /* multiplicateur des trainees (0..3), defaut 1.0 */
+    float   streakLength;       /* longueur horizontale des trainees (0.5..4.0), defaut 1.5 */
+    int     streakTintHue;      /* teinte des trainees en degres (0..345, pas de 15) ; -1 = neutre (blanc) */
+    bool    caOn;               /* aberration chromatique : decalage RGB radial vers les bords (off par defaut) */
+    float   caStrength;         /* decalage RGB max aux bords, en pixels (0..4), defaut 1.5 */
+    bool    shockOn;            /* shockwave radial sur le hit : onde de distorsion UV depuis le curseur (off par defaut) */
+    float   shockStrength;      /* amplitude max du decalage UV, en pixels (0..80), defaut 24 */
+    float   shockSpeed;         /* vitesse/nervosite de l'onde (0.5..2.5), defaut 1.0 ; plus haut = plus rapide & plus court */
+    bool    beatPunchOn;        /* beat punch : leger zoom + aberration sur le downbeat, pilote par la FFT du grave (off par defaut) */
+    float   beatPunchStrength;  /* intensite du zoom + aberration au pic de grave (0..2), defaut 1.0 */
+    float   beatPunchSens;      /* sensibilite de detection du downbeat (0.5..2.5), defaut 1.0 ; plus haut = declenche plus facilement */
     bool    cursorInMenu;       /* affiche le curseur jeu dans les menus (masque le curseur systeme) */
     /* --- HUD configurable --- */
     bool    hudShowScore;
@@ -417,6 +438,7 @@ typedef struct {
     int        filterCursor;
     bool       filterFocused;
     int        sortMode;
+    int        sortPrev;        /* tri a restaurer quand on desactive le tri par star rate (touche R) */
     int        diffFilter;
     bool       favsOnly;
     bool       newOnly;
@@ -493,6 +515,30 @@ extern NoteMesh gNoteMesh;
 extern Texture2D       gWhiteTex;
 extern RenderTexture2D gRenderTex;
 extern int gRtW, gRtH;
+
+/* shaders / post-processing (off par defaut ; voir postfx.c).
+ * gShadersOn = interrupteur maitre : false -> aucun effet, cout nul. */
+extern bool  gShadersOn;
+extern bool  gBloomOn;
+extern float gBloomIntensity, gBloomThreshold;
+extern float gBloomRadius;
+extern int   gBloomQuality, gBloomTintHue;
+extern bool  gBloomScreen, gBloomInMenu;
+/* anamorphic streaks : trainees lumineuses horizontales (reutilise le bright-pass) */
+extern bool  gStreakOn;
+extern float gStreakIntensity, gStreakLength;
+extern int   gStreakTintHue;
+/* aberration chromatique : decalage RGB radial en pleine resolution (off par defaut) */
+extern bool  gCaOn;
+extern float gCaStrength;
+/* shockwave radial sur le hit : onde de distorsion UV depuis le curseur (off par defaut) */
+extern bool  gShockOn;
+extern float gShockStrength;
+extern float gShockSpeed;
+/* beat punch : leger zoom + aberration sur le downbeat (FFT du grave) (off par defaut) */
+extern bool  gBeatPunchOn;
+extern float gBeatPunchStrength;
+extern float gBeatPunchSens;
 
 /* couverture de la map selectionnee (chargee a la demande dans main.c) */
 extern Texture2D gCoverTex;
@@ -572,6 +618,7 @@ extern char gMeshMsg[160];
 extern Settings  gSettings;
 extern int       gOptSel;
 extern int       gOptTab;
+extern int       gShaderSection;   /* onglet Shaders : 0=racine, 1=Bloom, 2=Anamorphic, 3=Chromatic, 4=Shockwave, 5=Beat punch */
 extern bool      gSensEditing;
 extern char      gSensEditBuf[32];
 extern Rectangle gOptCtrl;
@@ -643,6 +690,12 @@ void bg_unload_all(void);
 void bg_draw(BgStyle style, float intensity);
 void bg_update(BgStyle style, float dt);
 void bg_on_beat(bool isDownbeat);  /* a appeler sur chaque note frappee */
+/* Beat punch : analyse FFT du grave reutilisee par le postfx (zoom + aberration
+ * sur le downbeat). bg_punch_set_active (de)reclame le tap audio ; bg_punch_update
+ * est appele chaque frame (auto-gardee) ; bg_punch_level renvoie l'enveloppe 0..1. */
+void  bg_punch_set_active(bool on);
+void  bg_punch_update(float dt);
+float bg_punch_level(void);
 void cursor_draw_at(Vector2 pos, int projH);   /* dessine curseur + trainee a une position ecran */
 void cursor_menu_trail_reset(void);            /* reinitialise le buffer de trainee menu */
 
@@ -690,6 +743,9 @@ void  aim_build(Play *p, const AimConfig *cfg);
 
 void settings_update(int sw, int sh);
 void settings_draw(int sw, int sh);
+/* Pre-rendu offscreen des apercus du panneau (RT de la note 3D). A appeler AVANT
+ * le BeginDrawing/RT du frame (raylib n'empile pas les framebuffers). */
+void settings_predraw(void);
 void mods_draw_inline(int panelX, int sh, Vector2 mp);
 void mods_handle_click(int panelX, int sh, Vector2 mp);
 int  opt_selected_global(void);

@@ -24,6 +24,33 @@ Texture2D       gWhiteTex;
 RenderTexture2D gRenderTex;
 int gRtW = 0, gRtH = 0;
 
+/* --- shaders / post-processing (off par defaut) --- */
+bool  gShadersOn      = false;   /* interrupteur maitre : false -> aucun effet, cout nul */
+bool  gBloomOn        = false;
+float gBloomIntensity = 1.0f;
+float gBloomThreshold = 0.7f;
+float gBloomRadius    = 1.0f;
+int   gBloomQuality   = 1;
+int   gBloomTintHue   = -1;
+bool  gBloomScreen    = false;
+bool  gBloomInMenu    = false;
+/* anamorphic streaks (trainees horizontales) */
+bool  gStreakOn        = false;
+float gStreakIntensity = 1.0f;
+float gStreakLength    = 1.5f;
+int   gStreakTintHue   = -1;
+/* aberration chromatique (decalage RGB radial) */
+bool  gCaOn            = false;
+float gCaStrength      = 1.5f;
+/* shockwave radial sur le hit (onde de distorsion UV) */
+bool  gShockOn         = false;
+float gShockStrength   = 24.0f;
+float gShockSpeed      = 1.0f;
+/* beat punch : leger zoom + aberration sur le downbeat (pilote par la FFT du grave) */
+bool  gBeatPunchOn       = false;
+float gBeatPunchStrength = 1.0f;
+float gBeatPunchSens     = 1.0f;
+
 /* --- couverture de la map selectionnee --- */
 Texture2D gCoverTex;
 bool      gHaveCover = false;
@@ -104,6 +131,7 @@ int         gKeyCaptureSlot = 0;
 Settings  gSettings;
 int       gOptSel     = 0;
 int       gOptTab     = 0;
+int       gShaderSection = 0;   /* onglet Shaders : 0=racine, 1=Bloom, 2=Anamorphic, 3=Chromatic, 4=Shockwave, 5=Beat punch */
 bool      gSensEditing = false;
 char      gSensEditBuf[32];
 Rectangle gOptCtrl;

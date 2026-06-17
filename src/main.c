@@ -18,9 +18,11 @@
  *
  * Concu pour une machine faible : dossier scanne une seule fois (pas par frame),
  * la liste ne lit qu'un petit en-tete par fichier ; rendu O(notes visibles)/frame,
- * pas de lumiere/ombres/postfx, vsync.
+ * pas de lumiere/ombres ; postfx (bloom) optionnel et off par defaut (cf. postfx.c),
+ * vsync.
  */
 #include "common.h"
+#include "postfx.h"
 
 /* ===================================================================== */
 /*  Chargement asynchrone                                                */
@@ -92,6 +94,7 @@ static void go_menu(Play *p, AppScreen *screen) {
         profile_save();
     }
     sStatsSaved = false;
+    bg_punch_set_active(false);   /* relache le tap audio du beat punch en quittant le jeu */
     if (gLoader.threadStarted) { athread_join(&gLoader); }  /* attend la fin du chargement */
     if (p->loaded) play_unload(p);
     gLoader.state    = ALOAD_IDLE;
@@ -166,6 +169,79 @@ static void go_aim(Play *p, double *cd, AppScreen *screen, bool autoplay) {
         if (gTablet) { EnableCursor(); HideCursor(); }
         else DisableCursor();
     }
+}
+
+/* ===================================================================== */
+/*  Presentation finale : scene -> ecran, avec bloom optionnel            */
+/* ===================================================================== */
+
+/* RenderTexture plein ecran utilisee UNIQUEMENT quand le bloom est actif sans
+ * render target basse-resolution (gRtW == 0) : le post-traitement a besoin d'une
+ * texture source a lire. Choix (cf. piege 1) : on ne dessine la scene dans un RT
+ * que si le bloom est actif ; bloom OFF + gRtW == 0 reste le chemin direct fenetre
+ * (aucun RT supplementaire, cout nul, identique a l'origine). */
+static RenderTexture2D sBloomSceneRt;
+static int sBloomSceneW = 0, sBloomSceneH = 0;
+
+/* Demarre le rendu de la scene vers la bonne cible. Renvoie la resolution logique
+ * de dessin via les sorties rtw et rth, et le RT cible (NULL si dessin direct). */
+static RenderTexture2D *scene_begin(int sw, int sh, int *rtw, int *rth) {
+    if (gRtW > 0) {                       /* render target basse-reso existant */
+        *rtw = gRtW; *rth = gRtH;
+        BeginTextureMode(gRenderTex);
+        return &gRenderTex;
+    }
+    if (postfx_active()) {                /* pas de RT basse-reso : en allouer un plein ecran */
+        if (sBloomSceneW != sw || sBloomSceneH != sh) {
+            if (sBloomSceneW > 0) UnloadRenderTexture(sBloomSceneRt);
+            sBloomSceneRt = LoadRenderTexture(sw, sh);
+            sBloomSceneW = sw; sBloomSceneH = sh;
+        }
+        *rtw = sw; *rth = sh;
+        BeginTextureMode(sBloomSceneRt);
+        return &sBloomSceneRt;
+    }
+    *rtw = sw; *rth = sh;                  /* chemin direct fenetre (identique a l'origine) */
+    BeginDrawing();
+    return NULL;
+}
+
+/* Termine le rendu de la scene et la presente a l'ecran (bloom si gBloomOn). */
+static void scene_present(RenderTexture2D *target, int sw, int sh) {
+    if (!target) { EndDrawing(); return; }   /* scene dessinee directement, bloom off */
+    EndTextureMode();
+    int srcW = (target == &gRenderTex) ? gRtW : sw;
+    int srcH = (target == &gRenderTex) ? gRtH : sh;
+    postfx_present(target->texture, srcW, srcH, sw, sh);
+}
+
+/* Libere la RenderTexture plein ecran du bloom (cf. scene_begin). */
+static void scene_present_unload(void) {
+    if (sBloomSceneW > 0) { UnloadRenderTexture(sBloomSceneRt); sBloomSceneW = sBloomSceneH = 0; }
+}
+
+/* Presentation des ecrans de menu. Si un shader est actif (postfx_active) et
+ * bloomInMenu, on dessine l'UI dans le RT plein ecran (partage avec scene_begin)
+ * puis on applique les shaders ; sinon dessin direct fenetre (cout nul, comportement
+ * d'origine). Toujours plein ecran : la resolution interne (gRtW) ne concerne que
+ * le jeu, pas les menus. */
+static RenderTexture2D *ui_present_begin(int sw, int sh) {
+    if (postfx_active() && gBloomInMenu) {
+        if (sBloomSceneW != sw || sBloomSceneH != sh) {
+            if (sBloomSceneW > 0) UnloadRenderTexture(sBloomSceneRt);
+            sBloomSceneRt = LoadRenderTexture(sw, sh);
+            sBloomSceneW = sw; sBloomSceneH = sh;
+        }
+        BeginTextureMode(sBloomSceneRt);
+        return &sBloomSceneRt;
+    }
+    BeginDrawing();
+    return NULL;
+}
+static void ui_present_end(RenderTexture2D *target, int sw, int sh) {
+    if (!target) { EndDrawing(); return; }
+    EndTextureMode();
+    postfx_present(target->texture, sw, sh, sw, sh);
 }
 
 /* ===================================================================== */
@@ -290,6 +366,7 @@ int main(int argc, char **argv) {
     memset(&menu, 0, sizeof menu);
     menu.diffFilter      = -1;   /* -1 = tous ; 0..5 = filtre par difficulte */
     menu.sortMode        =  1;   /* tri par defaut : difficulte */
+    menu.sortPrev        =  1;   /* tri a restaurer en quittant le tri par star rate (R) */
     menu.collSel         = -1;   /* -1 = liste de collections (pas encore selectionnee) */
     menu.hideBlacklisted = true; /* maps bannies masquees par defaut */
     const char *directFile = NULL;
@@ -314,6 +391,7 @@ int main(int argc, char **argv) {
     /* Texture blanche 1x1 pour les billboards de notes */
     { Image img = GenImageColor(1, 1, WHITE); gWhiteTex = LoadTextureFromImage(img); UnloadImage(img); }
     cursor_halo_init();   /* texture radiale partagee (coeur + halo + trainee) */
+    postfx_init();        /* shaders du bloom (contexte GL pret) ; no-op au rendu si bloom off */
 
     /* reglages + meshes + curseurs (le contexte GL est pret -> chargement possible) */
     meshlist_scan("meshes");
@@ -526,7 +604,14 @@ int main(int argc, char **argv) {
                     shortcut = true;
                 }
                 if (IsKeyPressed(gKeys.menuSortStar)) {
-                    menu.sortMode = 4;
+                    if (menu.sortMode == 4) {
+                        /* deja en tri star rate -> on revient au tri precedent */
+                        menu.sortMode = (menu.sortPrev == 4) ? 1 : menu.sortPrev;
+                    } else {
+                        /* on memorise le tri courant et on bascule en star rate */
+                        menu.sortPrev = menu.sortMode;
+                        menu.sortMode = 4;
+                    }
                     menu.sel = 0; menu_sort(&menu);
                     shortcut = true;
                 }
@@ -883,10 +968,10 @@ int main(int argc, char **argv) {
                 menu.scrollAnim += (target - menu.scrollAnim) * k;
             }
 
-            BeginDrawing();
-            menu_draw(&menu, sw, sh);
-            if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
-            EndDrawing();
+            { RenderTexture2D *ut = ui_present_begin(sw, sh);
+              menu_draw(&menu, sw, sh);
+              if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
+              ui_present_end(ut, sw, sh); }
         }
         else if (screen == SCR_SETTINGS) {
             if (IsKeyPressed(KEY_ESCAPE) && !gSensEditing) {
@@ -923,10 +1008,11 @@ int main(int argc, char **argv) {
                     screen = SCR_LOADING;
                     continue;
                 }
-                BeginDrawing();
-                settings_draw(sw, sh);
-                if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
-                EndDrawing();
+                settings_predraw();   /* apercus offscreen AVANT le RT du frame (cf. bloom menus) */
+                { RenderTexture2D *ut = ui_present_begin(sw, sh);
+                  settings_draw(sw, sh);
+                  if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
+                  ui_present_end(ut, sw, sh); }
             }
         }
         else if (screen == SCR_MODES) {
@@ -940,10 +1026,10 @@ int main(int argc, char **argv) {
                 go_aim(&play, &cdRemain, &screen, autoplay);
                 continue;
             }
-            BeginDrawing();
-            modes_draw(sw, sh, &menu);
-            if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
-            EndDrawing();
+            { RenderTexture2D *ut = ui_present_begin(sw, sh);
+              modes_draw(sw, sh, &menu);
+              if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
+              ui_present_end(ut, sw, sh); }
         }
         else if (screen == SCR_PROFILE) {
             if (IsKeyPressed(KEY_ESCAPE)) {
@@ -951,10 +1037,10 @@ int main(int argc, char **argv) {
                 BeginDrawing(); ClearBackground((Color){ 12, 12, 18, 255 }); EndDrawing();
                 continue;
             }
-            BeginDrawing();
-            profile_draw(sw, sh, menu.count);
-            if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
-            EndDrawing();
+            { RenderTexture2D *ut = ui_present_begin(sw, sh);
+              profile_draw(sw, sh, menu.count);
+              if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
+              ui_present_end(ut, sw, sh); }
         }
         else if (screen == SCR_CALIBRATE) {
             if (IsKeyPressed(KEY_ESCAPE)) {
@@ -972,10 +1058,10 @@ int main(int argc, char **argv) {
                 continue;
             }
             calib_update(&calib);
-            BeginDrawing();
-            calib_draw(&calib, sw, sh);
-            if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
-            EndDrawing();
+            { RenderTexture2D *ut = ui_present_begin(sw, sh);
+              calib_draw(&calib, sw, sh);
+              if (gSettings.cursorInMenu) cursor_draw_at(GetMousePosition(), sh);
+              ui_present_end(ut, sw, sh); }
         }
         else if (screen == SCR_PRACTICE_SETUP) {
             /* === Modal de configuration Practice =================================
@@ -1321,11 +1407,10 @@ int main(int argc, char **argv) {
             bool cdAp = autoplay || (gMenuMode == 4);
             play_cursor(&play, cdAp, sw, sh);
 
-            /* Rendu dans la render texture basse resolution si internalRes > 0,
-             * sinon directement dans la fenetre.  La source RT a la hauteur NEGATIVE
-             * dans DrawTexturePro pour corriger le flip Y des RenderTexture raylib. */
-            { int rtw = gRtW > 0 ? gRtW : sw, rth = gRtH > 0 ? gRtH : sh;
-              if (gRtW > 0) BeginTextureMode(gRenderTex); else BeginDrawing();
+            /* Rendu de la scene puis presentation (scene_begin/scene_present
+             * gerent RT basse-reso, bloom et flip Y ; cf. section Presentation). */
+            { int rtw, rth;
+              RenderTexture2D *tgt = scene_begin(sw, sh, &rtw, &rth);
               play_draw_scene(&play, cam, cdAp);
 
               int n = (int)ceilf((float)cdRemain);
@@ -1343,15 +1428,7 @@ int main(int argc, char **argv) {
                        (Color){ 180, 200, 255, 255 });
               DrawText(play.map.songName, 14, 12, 22, RAYWHITE);
               DrawText("ESC : back to menu", 14, rth - 30, 14, (Color){ 130, 130, 145, 255 });
-              if (gRtW > 0) {
-                  EndTextureMode();
-                  BeginDrawing(); ClearBackground(BLACK);
-                  DrawTexturePro(gRenderTex.texture,
-                      (Rectangle){0,0,(float)gRtW,-(float)gRtH},
-                      (Rectangle){0,0,(float)sw,(float)sh},
-                      (Vector2){0,0}, 0.0f, WHITE);
-                  EndDrawing();
-              } else { EndDrawing(); } }
+              scene_present(tgt, sw, sh); }
 
             if (cdRemain <= 0.0) {
                 if (play.haveMusic) { PlayMusicStream(play.music); SetMusicVolume(play.music, gMusicVolume); }
@@ -1450,7 +1527,15 @@ int main(int argc, char **argv) {
             }
 
             bool ap = autoplay || (gMenuMode == 4);
+            int prevHits = play.hits;
             play_update(&play, ap, dt, sw, sh);
+            /* Shockwave : note(s) frappee(s) ce frame -> onde de distorsion depuis le
+             * curseur. Position ecran via la camera (statique) + taille fenetre, en UV
+             * normalises y-bas pour postfx. Zero cout si l'effet est off. */
+            if (gShadersOn && gShockOn && !play.paused && play.hits > prevHits) {
+                Vector2 sp = GetWorldToScreenEx((Vector3){ play.cx, play.cy, 0.0f }, cam, sw, sh);
+                postfx_shockwave(sp.x / (float)sw, sp.y / (float)sh);
+            }
 
             /* Speed Ladder : map reussie -> on accelere et on rejoue (jusqu'a la mort) */
             if (gMode == MODE_LADDER && play.finished && !play.gameOver) {
@@ -1481,19 +1566,11 @@ int main(int argc, char **argv) {
                 profile_save();
             }
 
-            { int rtw = gRtW > 0 ? gRtW : sw, rth = gRtH > 0 ? gRtH : sh;
-              if (gRtW > 0) BeginTextureMode(gRenderTex); else BeginDrawing();
+            { int rtw, rth;
+              RenderTexture2D *tgt = scene_begin(sw, sh, &rtw, &rth);
               play_draw_scene(&play, cam, ap);
               play_draw_hud(&play, rtw, rth, ap);
-              if (gRtW > 0) {
-                  EndTextureMode();
-                  BeginDrawing(); ClearBackground(BLACK);
-                  DrawTexturePro(gRenderTex.texture,
-                      (Rectangle){0,0,(float)gRtW,-(float)gRtH},
-                      (Rectangle){0,0,(float)sw,(float)sh},
-                      (Vector2){0,0}, 0.0f, WHITE);
-                  EndDrawing();
-              } else { EndDrawing(); } }
+              scene_present(tgt, sw, sh); }
         }
     }
 
@@ -1512,6 +1589,8 @@ int main(int argc, char **argv) {
     bg_unload_all();
     UnloadTexture(gWhiteTex);
     cursor_halo_unload();
+    postfx_unload();              /* shaders + render textures du bloom */
+    scene_present_unload();       /* RT plein ecran du bloom (cas gRtW == 0) */
     if (gRtW > 0) UnloadRenderTexture(gRenderTex);
     free(menu.items);
     free(menu.filtered);

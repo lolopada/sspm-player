@@ -2,7 +2,7 @@
 #include "filepicker.h"
 
 /* --- onglets du menu Options --- */
-static const char *const OPT_TAB_NAMES[N_TABS] = { "Gameplay", "Visual", "Controls", "System", "Trail", "Cursor", "Keys" };
+static const char *const OPT_TAB_NAMES[N_TABS] = { "Gameplay", "Visual", "Controls", "System", "Trail", "Cursor", "Keys", "Shaders" };
 
 /* OPT_TABS[onglet][ligne_locale] = indice global du reglage affiche.
  * -1 = fin de la liste de l'onglet (les lignes juice, trainee et curseur sont
@@ -46,6 +46,7 @@ static const int OPT_TABS[N_TABS][8] = {
     {42,-1,-1,-1,-1,-1,-1,-1 },   /* Trainee     : activer + sous-options dynamiques */
     {82,35,-1,-1,-1,-1,-1,-1 },   /* Curseur     : visible menu + mode + sous-options */
     {-1,-1,-1,-1,-1,-1,-1,-1 },   /* Touches     : tout ajoute dynamiquement (60-76) */
+    {-1,-1,-1,-1,-1,-1,-1,-1 },   /* Shaders     : tout ajoute dynamiquement (sous-menus, cf. build_opt_rows) */
 };
 
 static int build_opt_rows(int tab, int *rows) {
@@ -57,6 +58,39 @@ static int build_opt_rows(int tab, int *rows) {
         if (gSettings.bgStyle != BG_NONE) rows[n++] = 81;   /* intensite : visible seulement si un fond est actif */
         /* HUD configurable */
         for (int g = 83; g <= 87; g++) rows[n++] = g;
+    }
+    if (tab == 7) {   /* Shaders : interrupteur maitre + sous-menus (Bloom, Anamorphic streaks) */
+        if (gShaderSection == 1) {            /* sous-menu Bloom */
+            rows[n++] = 99;                   /* < Back */
+            rows[n++] = 98;                   /* Enable bloom */
+            if (gSettings.bloomOn) for (int g = 89; g <= 94; g++) rows[n++] = g;
+        } else if (gShaderSection == 2) {     /* sous-menu Anamorphic streaks */
+            rows[n++] = 99;                   /* < Back */
+            rows[n++] = 100;                  /* Enable streaks */
+            if (gSettings.streakOn) { rows[n++] = 101; rows[n++] = 102; rows[n++] = 103; }
+        } else if (gShaderSection == 3) {     /* sous-menu Chromatic aberration */
+            rows[n++] = 99;                   /* < Back */
+            rows[n++] = 105;                  /* Enable aberration */
+            if (gSettings.caOn) rows[n++] = 106;
+        } else if (gShaderSection == 4) {     /* sous-menu Shockwave */
+            rows[n++] = 99;                   /* < Back */
+            rows[n++] = 108;                  /* Enable shockwave */
+            if (gSettings.shockOn) { rows[n++] = 109; rows[n++] = 110; }
+        } else if (gShaderSection == 5) {     /* sous-menu Beat punch */
+            rows[n++] = 99;                   /* < Back */
+            rows[n++] = 112;                  /* Enable beat punch */
+            if (gSettings.beatPunchOn) { rows[n++] = 113; rows[n++] = 114; }
+        } else {                              /* racine : maitre + entrees de navigation */
+            rows[n++] = 88;                   /* Shaders (maitre) */
+            if (gSettings.shadersOn) {
+                rows[n++] = 95;               /* Shaders in menus */
+                rows[n++] = 96;               /* -> Bloom */
+                rows[n++] = 97;               /* -> Anamorphic streaks */
+                rows[n++] = 104;              /* -> Chromatic aberration */
+                rows[n++] = 107;              /* -> Shockwave */
+                rows[n++] = 111;              /* -> Beat punch */
+            }
+        }
     }
     if (tab == 4) {   /* Trainee : sous-options visibles seulement si activee */
         if (gSettings.cursor.trailEnabled) {
@@ -230,6 +264,7 @@ void settings_update(int sw, int sh) {
         int dir = (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) ? -1 : 1;
         gOptTab = (gOptTab + dir + N_TABS) % N_TABS;
         gOptSel = 0;
+        gShaderSection = 0;   /* repart a la racine de l'onglet Shaders */
         nOpts = build_opt_rows(gOptTab, rows);
     }
 
@@ -250,7 +285,7 @@ void settings_update(int sw, int sh) {
     for (int ti = 0; ti < N_TABS && !catClicked; ti++) {
         Rectangle cr = { (float)sbX, (float)(sbY + ti * catH), (float)sbW, (float)(catH - 6) };
         if (CheckCollisionPointRec(mp, cr) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            gOptTab = ti; gOptSel = 0;
+            gOptTab = ti; gOptSel = 0; gShaderSection = 0;
             nOpts = build_opt_rows(gOptTab, rows);
             catClicked = true;
         }
@@ -417,12 +452,105 @@ void settings_update(int sw, int sh) {
             case 85: gSettings.hudShowAccuracy = !gSettings.hudShowAccuracy; break;
             case 86: gSettings.hudShowHp       = !gSettings.hudShowHp;       break;
             case 87: gSettings.hudShowSongInfo = !gSettings.hudShowSongInfo; break;
+            /* --- Shaders : interrupteur maitre + navigation + bloom + streaks --- */
+            case 88: gSettings.shadersOn = !gSettings.shadersOn; gOptSel = 0; break;  /* change le nb de lignes */
+            case 95: gSettings.bloomInMenu = !gSettings.bloomInMenu; break;
+            case 96: case 97: case 104: case 107: case 111:   /* entrer dans un sous-menu (Enter / fleche droite / clic) */
+                if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_RIGHT) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                    gShaderSection = (globalR == 96) ? 1 : (globalR == 97) ? 2 : (globalR == 104) ? 3
+                                   : (globalR == 107) ? 4 : 5; gOptSel = 0;
+                }
+                break;
+            case 99:            /* revenir a la racine (Enter / fleche / clic) */
+                if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                    gShaderSection = 0; gOptSel = 0;
+                }
+                break;
+            /* Bloom */
+            case 98: gSettings.bloomOn = !gSettings.bloomOn; break;  /* change le nb de lignes (sous le toggle) */
+            case 89: gSettings.bloomIntensity = clampf(gSettings.bloomIntensity + step * 0.1f,  0.0f, 3.0f); break;
+            case 90: gSettings.bloomThreshold = clampf(gSettings.bloomThreshold + step * 0.05f, 0.0f, 1.0f); break;
+            case 91: gSettings.bloomRadius    = clampf(gSettings.bloomRadius    + step * 0.1f,  0.5f, 3.0f); break;
+            case 92: { int t2 = 3; gSettings.bloomQuality = ((gSettings.bloomQuality + step) % t2 + t2) % t2; } break;
+            case 93: { /* teinte : -1 (neutre) puis hues 0..345 par pas de 15, en cycle */
+                int h = gSettings.bloomTintHue;
+                if (step > 0) { h = (h < 0) ? 0 : h + 15; if (h > 345) h = -1; }
+                else          { h = (h < 0) ? 345 : h - 15; if (h < 0) h = -1; }
+                gSettings.bloomTintHue = h;
+            } break;
+            case 94: gSettings.bloomScreen = !gSettings.bloomScreen; break;
+            /* Anamorphic streaks */
+            case 100: gSettings.streakOn = !gSettings.streakOn; break;  /* change le nb de lignes (sous le toggle) */
+            case 101: gSettings.streakIntensity = clampf(gSettings.streakIntensity + step * 0.1f, 0.0f, 3.0f); break;
+            case 102: gSettings.streakLength    = clampf(gSettings.streakLength    + step * 0.1f, 0.5f, 4.0f); break;
+            case 103: { /* teinte : -1 (neutre) puis hues 0..345 par pas de 15, en cycle */
+                int h = gSettings.streakTintHue;
+                if (step > 0) { h = (h < 0) ? 0 : h + 15; if (h > 345) h = -1; }
+                else          { h = (h < 0) ? 345 : h - 15; if (h < 0) h = -1; }
+                gSettings.streakTintHue = h;
+            } break;
+            /* Chromatic aberration */
+            case 105: gSettings.caOn = !gSettings.caOn; break;  /* change le nb de lignes (sous le toggle) */
+            case 106: gSettings.caStrength = clampf(gSettings.caStrength + step * 0.25f, 0.0f, 4.0f); break;
+            /* Shockwave */
+            case 108: gSettings.shockOn = !gSettings.shockOn; break;  /* change le nb de lignes (sous le toggle) */
+            case 109: gSettings.shockStrength = clampf(gSettings.shockStrength + step * 2.0f,  0.0f, 80.0f); break;
+            case 110: gSettings.shockSpeed    = clampf(gSettings.shockSpeed    + step * 0.1f,  0.5f, 2.5f);  break;
+            /* Beat punch */
+            case 112: gSettings.beatPunchOn = !gSettings.beatPunchOn; break;  /* change le nb de lignes (sous le toggle) */
+            case 113: gSettings.beatPunchStrength = clampf(gSettings.beatPunchStrength + step * 0.1f, 0.0f, 2.0f); break;
+            case 114: gSettings.beatPunchSens     = clampf(gSettings.beatPunchSens     + step * 0.1f, 0.5f, 2.5f); break;
             default: break;
         }
         if (globalR != 9 && !(globalR >= 60 && globalR <= 76) && globalR != 77
             && globalR != 80)
             settings_apply(&gSettings);
     }
+}
+
+/* Apercu 3D de la forme des notes : rendu dans sa propre render texture.
+ * Pre-rendu HORS frame (cf. settings_predraw) car raylib n'empile pas les
+ * framebuffers : imbrique dans le RT du bloom (Bloom in menus), il casserait le
+ * rendu du panneau. settings_preview ne fait ensuite que blitter cette texture. */
+static RenderTexture2D sNotePrevRT = { 0 };
+static int             sNotePrevSz = 0;
+
+void settings_predraw(void) {
+    if (opt_selected_global() != 4) return;     /* apercu visible seulement sur "Note shape" */
+    int psz = 38;                               /* = rowH - 6 (taille d'une ligne) */
+    if (sNotePrevSz != psz) {
+        if (sNotePrevRT.id != 0) UnloadRenderTexture(sNotePrevRT);
+        sNotePrevRT = LoadRenderTexture(psz, psz);
+        sNotePrevSz = psz;
+    }
+    Color pc[MAX_PALETTE]; int pn;
+    settings_palette(&gSettings, pc, &pn);
+    Color nc = (pn > 0) ? pc[0] : (Color){ 255, 90, 140, 255 };
+    float sc = gSettings.noteScale;
+    float angle = fmodf((float)GetTime() * 40.0f, 360.0f);
+    BeginTextureMode(sNotePrevRT);
+    ClearBackground((Color){ 14, 14, 24, 255 });
+    Camera3D cam = {
+        .position   = { 2.2f, 1.4f, 2.2f },
+        .target     = { 0.0f, 0.0f, 0.0f },
+        .up         = { 0.0f, 1.0f, 0.0f },
+        .fovy       = 45.0f,
+        .projection = CAMERA_PERSPECTIVE
+    };
+    BeginMode3D(cam);
+    if (gNoteMesh.active) {
+        float ms = gNoteMesh.scale * sc;
+        DrawModelEx(gNoteMesh.model, (Vector3){ 0, 0, 0 },
+                    (Vector3){ 0, 1, 0 }, angle, (Vector3){ ms, ms, ms }, nc);
+    } else {
+        float side = CUBE_SIZE * sc;
+        DrawCubeV((Vector3){ 0, 0, 0 }, (Vector3){ side, side, side }, nc);
+        DrawCubeWiresV((Vector3){ 0, 0, 0 },
+                       (Vector3){ side + 0.05f, side + 0.05f, side + 0.05f },
+                       (Color){ 255, 255, 255, 60 });
+    }
+    EndMode3D();
+    EndTextureMode();
 }
 
 /* Apercu inline d'un reglage : ancre a droite sur rightX, centre verticalement
@@ -462,48 +590,14 @@ static void settings_preview(int globalR, bool sel, int rightX, int ry, int rowI
         return;
     }
     if (!sel) return;                                       /* le reste : ligne active */
-    if (globalR == 4) {                                      /* forme des notes : mini-preview 3D */
-        static RenderTexture2D rt = { 0 };
+    if (globalR == 4) {                                      /* forme des notes : blit de l'apercu pre-rendu */
         int psz = rowInner;
-        if ((int)rt.texture.width != psz) {
-            if (rt.id != 0) UnloadRenderTexture(rt);
-            rt = LoadRenderTexture(psz, psz);
-        }
-        Color pc[MAX_PALETTE]; int pn;
-        settings_palette(&gSettings, pc, &pn);
-        Color nc = (pn > 0) ? pc[0] : (Color){ 255, 90, 140, 255 };
-        float sc = gSettings.noteScale;
-        float angle = fmodf((float)GetTime() * 40.0f, 360.0f);
-        BeginTextureMode(rt);
-        ClearBackground((Color){ 14, 14, 24, 255 });
-        Camera3D cam = {
-            .position   = { 2.2f, 1.4f, 2.2f },
-            .target     = { 0.0f, 0.0f, 0.0f },
-            .up         = { 0.0f, 1.0f, 0.0f },
-            .fovy       = 45.0f,
-            .projection = CAMERA_PERSPECTIVE
-        };
-        BeginMode3D(cam);
-        if (gNoteMesh.active) {
-            float ms = gNoteMesh.scale * sc;
-            DrawModelEx(gNoteMesh.model,
-                        (Vector3){ 0, 0, 0 },
-                        (Vector3){ 0, 1, 0 }, angle,
-                        (Vector3){ ms, ms, ms }, nc);
-        } else {
-            float side = CUBE_SIZE * sc;
-            DrawCubeV((Vector3){ 0, 0, 0 }, (Vector3){ side, side, side }, nc);
-            DrawCubeWiresV((Vector3){ 0, 0, 0 },
-                           (Vector3){ side + 0.05f, side + 0.05f, side + 0.05f },
-                           (Color){ 255, 255, 255, 60 });
-        }
-        EndMode3D();
-        EndTextureMode();
         int px = rightX - psz - 4, py = ry;
         DrawRectangle(px - 2, py - 2, psz + 4, psz + 4, (Color){ 20, 22, 40, 255 });
-        DrawTextureRec(rt.texture,
-                       (Rectangle){ 0, 0, (float)psz, -(float)psz },
-                       (Vector2){ (float)px, (float)py }, WHITE);
+        if (sNotePrevRT.id != 0)
+            DrawTextureRec(sNotePrevRT.texture,
+                           (Rectangle){ 0, 0, (float)sNotePrevSz, -(float)sNotePrevSz },
+                           (Vector2){ (float)px, (float)py }, WHITE);
         DrawRectangleLinesEx((Rectangle){ (float)(px - 2), (float)(py - 2),
                                           (float)(psz + 4), (float)(psz + 4) },
                               1.0f, (Color){ 55, 65, 100, 200 });
@@ -691,6 +785,41 @@ static void settings_hint(int g, const char **out, Color *col) {
         case 81: *out = "(brightness of the background - 0=invisible, 100=full)"; break;
         case 82: *out = "(Yes = use your cursor skin in menus - hides the system cursor)";
                  *col = (Color){ 150, 200, 255, 255 }; break;
+        case 88: *out = "(master switch for ALL shaders - Off = zero cost, identical to original rendering)";
+                 *col = (Color){ 150, 200, 255, 255 }; break;
+        case 89: *out = "(bloom strength multiplier - 0=none, 1.0=default, 3.0=intense)"; break;
+        case 90: *out = "(brightness threshold - lower = more areas glow, higher = only the brightest)"; break;
+        case 91: *out = "(halo spread - 0.5=tight, 1.0=default, 3.0=wide and dreamy)"; break;
+        case 92: *out = "(bloom buffer resolution - 1/8 = fastest (weak GPU), 1/2 = sharpest/heaviest)";
+                 *col = (Color){ 255, 200, 120, 255 }; break;
+        case 93: *out = "(glow color - Neutral = no tint; otherwise a pastel hue added to the halo)"; break;
+        case 94: *out = "(Additive = bright, can blow out  |  Screen = softer, preserves highlights)"; break;
+        case 95: *out = "(also apply the shaders to menu screens - off keeps menus at zero cost)";
+                 *col = (Color){ 150, 200, 255, 255 }; break;
+        case 96: *out = "(Bloom: soft glow halo on bright areas - Enter / Right to open its settings)";
+                 *col = (Color){ 150, 200, 255, 255 }; break;
+        case 97: *out = "(Anamorphic streaks: horizontal synthwave light trails - Enter / Right to open)";
+                 *col = (Color){ 150, 200, 255, 255 }; break;
+        case 98: *out = "(enable the bloom glow - low-res multi-pass post-processing)"; break;
+        case 99: *out = "(back to the shaders list)"; *col = (Color){ 150, 200, 255, 255 }; break;
+        case 100: *out = "(horizontal light streaks from bright spots - reuses the bloom bright-pass, near-zero extra cost)"; break;
+        case 101: *out = "(streak strength multiplier - 0=none, 1.0=default, 3.0=intense)"; break;
+        case 102: *out = "(streak horizontal length - 0.5=short, 1.5=default, 4.0=very long)"; break;
+        case 103: *out = "(streak color - Neutral = white; otherwise a pastel hue, e.g. cyan/magenta synthwave)"; break;
+        case 104: *out = "(Chromatic aberration: subtle RGB split toward the screen edges - Enter / Right to open)";
+                 *col = (Color){ 150, 200, 255, 255 }; break;
+        case 105: *out = "(enable the chromatic aberration - radial RGB fringing, full-res single pass)"; break;
+        case 106: *out = "(max RGB shift at the edges in pixels - keep it subtle: 1-2 px, more blurs the notes)"; break;
+        case 107: *out = "(Shockwave: a radial UV ripple bursts from the cursor on every hit - Enter / Right to open)";
+                 *col = (Color){ 150, 200, 255, 255 }; break;
+        case 108: *out = "(enable the on-hit shockwave - single-pass UV distortion from the cursor)"; break;
+        case 109: *out = "(ripple amplitude in pixels - 0=none, 24=default; high values warp the whole screen)"; break;
+        case 110: *out = "(ripple speed / snappiness - higher = faster and shorter wave)"; break;
+        case 111: *out = "(Beat punch: slight zoom + chromatic aberration on the downbeat, driven by the bass FFT - Enter / Right to open)";
+                 *col = (Color){ 150, 200, 255, 255 }; break;
+        case 112: *out = "(enable beat punch - the image pulses on bass kicks; single-pass, reuses the spectrum FFT)"; break;
+        case 113: *out = "(punch strength - scales the zoom + aberration peak; 0=none, 1.0=default, 2.0=intense)"; break;
+        case 114: *out = "(beat sensitivity - higher triggers more easily and harder on each bass hit)"; break;
         default: break;
     }
 }
@@ -728,7 +857,7 @@ void settings_draw(int sw, int sh) {
     DrawRectangle(pX - 16, sbY, 1, pBottom - sbY, (Color){ 36, 36, 52, 255 });
 
     /* === Panneau de reglages de la categorie active === */
-    static const char *const labels[88] = {
+    static const char *const labels[115] = {
         "Spawn distance", "Speed (approach time)",
         "Graphics tablet", "Color palette", "Note shape", "Image file",
         "God Mode", "Timing tolerance", "Note hue", "Mouse sensitivity",
@@ -771,7 +900,20 @@ void settings_draw(int sw, int sh) {
         /* 82 : curseur dans les menus */
         "Cursor in menus",
         /* 83-87 : HUD configurable */
-        "HUD: Score", "HUD: Combo", "HUD: Accuracy", "HUD: HP bar", "HUD: Song info"
+        "HUD: Score", "HUD: Combo", "HUD: Accuracy", "HUD: HP bar", "HUD: Song info",
+        /* 88-95 : shaders (post-processing) - racine + sous-options bloom */
+        "Shaders", "Bloom: intensity", "Bloom: threshold",
+        "Bloom: spread", "Bloom: quality", "Bloom: tint", "Bloom: blend mode",
+        "Shaders in menus",
+        /* 96-103 : navigation des sous-menus + sous-options streaks */
+        "Bloom", "Anamorphic streaks", "Enable bloom", "Back",
+        "Enable streaks", "Streaks: intensity", "Streaks: length", "Streaks: tint",
+        /* 104-106 : navigation + sous-options aberration chromatique */
+        "Chromatic aberration", "Enable aberration", "Aberration: strength",
+        /* 107-110 : navigation + sous-options shockwave */
+        "Shockwave", "Enable shockwave", "Shockwave: strength", "Shockwave: speed",
+        /* 111-114 : navigation + sous-options beat punch */
+        "Beat punch", "Enable beat punch", "Beat punch: strength", "Beat punch: sensitivity"
     };
 
     int last = scroll + maxVis; if (last > nOpts) last = nOpts;
@@ -781,7 +923,9 @@ void settings_draw(int sw, int sh) {
         bool sel = (r == gOptSel);
         bool sub = (globalR >= 23 && globalR <= 28) || globalR == 5
                 || (globalR >= 36 && globalR <= 41) || (globalR >= 43 && globalR <= 51)
-                || globalR == 81;
+                || globalR == 81 || (globalR >= 89 && globalR <= 94)
+                || (globalR >= 101 && globalR <= 103) || globalR == 106
+                || (globalR >= 109 && globalR <= 110) || (globalR >= 113 && globalR <= 114);
         if (sel) DrawRectangle(pX, ry, pW, rowH - 6, (Color){ 34, 60, 110, 230 });
 
         int fs = 20, cyT = ry + (rowH - 6 - fs) / 2;
@@ -910,14 +1054,51 @@ void settings_draw(int sw, int sh) {
             case 85: snprintf(val, sizeof val, "%s", gSettings.hudShowAccuracy ? "Show" : "Hide"); break;
             case 86: snprintf(val, sizeof val, "%s", gSettings.hudShowHp       ? "Show" : "Hide"); break;
             case 87: snprintf(val, sizeof val, "%s", gSettings.hudShowSongInfo ? "Show" : "Hide"); break;
+            /* --- Shaders : maitre + navigation + bloom + streaks --- */
+            case 88: snprintf(val, sizeof val, "%s", gSettings.shadersOn ? "Yes" : "No"); break;
+            case 95: snprintf(val, sizeof val, "%s", gSettings.bloomInMenu ? "Yes" : "No"); break;
+            case 96: case 97: case 104: case 107: case 111: snprintf(val, sizeof val, ">"); break;  /* entree de sous-menu */
+            case 99: val[0] = '\0'; break;                            /* retour */
+            /* Bloom */
+            case 98: snprintf(val, sizeof val, "%s", gSettings.bloomOn ? "Yes" : "No"); break;
+            case 89: snprintf(val, sizeof val, "%.1f x", gSettings.bloomIntensity); break;
+            case 90: snprintf(val, sizeof val, "%d %%", (int)(gSettings.bloomThreshold * 100.0f + 0.5f)); break;
+            case 91: snprintf(val, sizeof val, "%.1f x", gSettings.bloomRadius); break;
+            case 92: { static const char *bq[3] = {"1/2 (High)","1/4 (Balanced)","1/8 (Fast)"};
+                       snprintf(val, sizeof val, "%s", bq[gSettings.bloomQuality]); } break;
+            case 93:
+                if (gSettings.bloomTintHue < 0) snprintf(val, sizeof val, "Neutral");
+                else snprintf(val, sizeof val, "%d deg", gSettings.bloomTintHue);
+                break;
+            case 94: snprintf(val, sizeof val, "%s", gSettings.bloomScreen ? "Screen (soft)" : "Additive"); break;
+            /* Anamorphic streaks */
+            case 100: snprintf(val, sizeof val, "%s", gSettings.streakOn ? "Yes" : "No"); break;
+            case 101: snprintf(val, sizeof val, "%.1f x", gSettings.streakIntensity); break;
+            case 102: snprintf(val, sizeof val, "%.1f x", gSettings.streakLength); break;
+            case 103:
+                if (gSettings.streakTintHue < 0) snprintf(val, sizeof val, "Neutral");
+                else snprintf(val, sizeof val, "%d deg", gSettings.streakTintHue);
+                break;
+            /* Chromatic aberration */
+            case 105: snprintf(val, sizeof val, "%s", gSettings.caOn ? "Yes" : "No"); break;
+            case 106: snprintf(val, sizeof val, "%.2f px", gSettings.caStrength); break;
+            /* Shockwave */
+            case 108: snprintf(val, sizeof val, "%s", gSettings.shockOn ? "Yes" : "No"); break;
+            case 109: snprintf(val, sizeof val, "%.0f px", gSettings.shockStrength); break;
+            case 110: snprintf(val, sizeof val, "%.1f x", gSettings.shockSpeed); break;
+            /* Beat punch */
+            case 112: snprintf(val, sizeof val, "%s", gSettings.beatPunchOn ? "Yes" : "No"); break;
+            case 113: snprintf(val, sizeof val, "%.1f x", gSettings.beatPunchStrength); break;
+            case 114: snprintf(val, sizeof val, "%.1f x", gSettings.beatPunchSens); break;
             default: snprintf(val, sizeof val, "?"); break;
         }
         int vw = MeasureText(val, fs);
         Color vc = sel ? (Color){ 200, 230, 255, 255 } : (Color){ 165, 185, 215, 255 };
         bool isBindRow = (globalR >= 60 && globalR <= 76);
         bool isPickRow = (globalR == 77);
+        bool isNavRow  = (globalR == 96 || globalR == 97 || globalR == 104 || globalR == 107 || globalR == 111 || globalR == 99);  /* sous-menus shaders */
         int valLeft;
-        if (globalR != 9 && !isBindRow && !isPickRow) {
+        if (globalR != 9 && !isBindRow && !isPickRow && !isNavRow) {
             int decX = rx - 12 - 10 - vw - 16;   /* x du "<" */
             /* zone cliquable "< valeur >" ; clic moitie gauche = baisser, droite = monter */
             Rectangle ctrl = { (float)(decX - 4), (float)ry, (float)((rx + fs) - decX + 8), (float)(rowH - 6) };

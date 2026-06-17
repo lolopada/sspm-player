@@ -662,6 +662,8 @@ void play_update(Play *p, bool autoplay, float dt, int sw, int sh) {
             && p->endDelay <= 0.0f && gMode != MODE_PRACTICE)
             p->endDelay = 1.0f;
         juice_update(p, dt);
+        /* Beat punch : (de)reclame l'analyse FFT du grave selon le reglage (idempotent). */
+        bg_punch_set_active(gShadersOn && gBeatPunchOn);
         bg_update(gSettings.bgStyle, dt);
     }
 
